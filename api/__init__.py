@@ -1,0 +1,1 @@
+"""FastAPI uygulaması (F4)."""

@@ -1,0 +1,57 @@
+# RSS haber kaynakları (F1)
+# KAP: resmi ücretsiz RSS yok; site:kap.org.tr Google News akışı kullanılıyor.
+
+feeds:
+  - id: aa_ekonomi
+    name: Anadolu Ajansı — Ekonomi
+    url: https://www.aa.com.tr/tr/rss/default?cat=ekonomi
+    language: tr
+    market: TR
+
+  - id: bloomberght
+    name: Bloomberg HT
+    url: https://www.bloomberght.com/rss
+    language: tr
+    market: TR
+
+  - id: dunya
+    name: Dünya Gazetesi
+    url: https://www.dunya.com/rss
+    language: tr
+    market: TR
+
+  - id: google_kap
+    name: KAP (Google News — site:kap.org.tr)
+    url: https://news.google.com/rss/search?q=site:kap.org.tr&hl=tr&gl=TR&ceid=TR:tr
+    language: tr
+    market: TR
+
+  - id: google_bist
+    name: BIST / Borsa İstanbul (Google News)
+    url: https://news.google.com/rss/search?q=Borsa+Istanbul+OR+BIST&hl=tr&gl=TR&ceid=TR:tr
+    language: tr
+    market: TR
+
+  - id: cnbc_business
+    name: CNBC Business
+    url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147
+    language: en
+    market: US
+
+  - id: marketwatch
+    name: MarketWatch Top Stories
+    url: https://feeds.marketwatch.com/marketwatch/topstories/
+    language: en
+    market: US
+
+  - id: yahoo_finance
+    name: Yahoo Finance News
+    url: https://finance.yahoo.com/news/rssindex
+    language: en
+    market: US
+
+  - id: google_sp500
+    name: S&P 500 / Wall Street (Google News)
+    url: https://news.google.com/rss/search?q=S%26P+500+OR+Wall+Street&hl=en-US&gl=US&ceid=US:en
+    language: en
+    market: US

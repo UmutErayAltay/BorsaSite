@@ -1,0 +1,30 @@
+# F3 — XGBoost tahmin modeli
+
+model:
+  name: xgboost
+  version: "1.0"
+  path: data/models/xgb_up.pkl
+
+features:
+  min_history_days: 60
+  rsi_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  sma_short: 20
+  sma_long: 50
+  sentiment_lag_days: 3
+
+training:
+  test_ratio: 0.2
+  random_state: 42
+  xgb:
+    n_estimators: 200
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    eval_metric: logloss
+
+prediction:
+  direction_threshold: 0.5

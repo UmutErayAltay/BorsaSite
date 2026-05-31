@@ -1,0 +1,32 @@
+# Haber metninde ticker sanılıp eşleşmemesi gereken kısa kelimeler
+blocklist:
+  - AI
+  - US
+  - UK
+  - EU
+  - TR
+  - CEO
+  - CFO
+  - IPO
+  - ETF
+  - FDA
+  - FAA
+  - SEC
+  - SPK
+  - KAP
+  - BIST
+  - HISSE
+  - BANK
+  - HOLDING
+  - GROUP
+  - INC
+  - LTD
+  - THE
+  - AND
+  - FOR
+  - USD
+  - EUR
+  - TRY
+  - CNN
+  - BBC
+  - RSS

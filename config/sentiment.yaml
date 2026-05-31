@@ -1,0 +1,13 @@
+# Duygu analizi model ayarları (F2)
+
+models:
+  en:
+    name: ProsusAI/finbert
+    description: Finans haberleri — İngilizce
+  tr:
+    name: savasy/bert-base-turkish-sentiment-cased
+    description: Türkçe genel duygu (finans fine-tune F5)
+
+inference:
+  batch_size: 8
+  max_chars: 2000

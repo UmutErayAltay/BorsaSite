@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Borsa AI — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <span class="logo">B</span>
+      <div>
+        <h1>Borsa AI</h1>
+        <p class="tagline">BIST + ABD · Haber · Sentiment · Tahmin</p>
+      </div>
+    </div>
+    <p class="disclaimer">Bilgilendirme amaçlıdır. Yatırım tavsiyesi değildir.</p>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <div class="toolbar">
+    <div class="filters">
+      <button class="filter active" data-market="">Tümü</button>
+      <button class="filter" data-market="BIST">BIST</button>
+      <button class="filter" data-market="US">ABD</button>
+    </div>
+    <input type="search" id="search" placeholder="Hisse ara (THYAO, AAPL…)" />
+  </div>
+
+  <main class="layout" id="main-layout">
+    <section class="panel table-panel" id="table-panel">
+      <h2>Tahminler <span class="hint">— hisseye tıklayın</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Hisse</th>
+              <th>Olasılık</th>
+              <th>Yön</th>
+              <th>Kapanış</th>
+              <th>Sentiment</th>
+            </tr>
+          </thead>
+          <tbody id="predictions-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel chart-expanded hidden" id="chart-expanded">
+      <div class="chart-header">
+        <div class="chart-title-block">
+          <button type="button" class="btn-close" id="btn-close-chart" title="Kapat">×</button>
+          <div>
+            <h2 id="detail-title">Hisse</h2>
+            <p class="detail-ticker" id="detail-ticker"></p>
+          </div>
+        </div>
+        <div class="chart-meta">
+          <div class="change-badge" id="period-change">—</div>
+          <div class="prob-badge" id="detail-prob"></div>
+        </div>
+      </div>
+
+      <div class="interval-tabs" id="interval-tabs">
+        <button type="button" class="interval active" data-interval="1h">Saatlik</button>
+        <button type="button" class="interval" data-interval="1d">Günlük</button>
+        <button type="button" class="interval" data-interval="1w">Haftalık</button>
+        <button type="button" class="interval" data-interval="1m">Aylık</button>
+        <button type="button" class="interval" data-interval="1y">Yıllık</button>
+      </div>
+
+      <div class="chart-loading hidden" id="chart-loading">Yükleniyor…</div>
+      <div class="chart-container">
+        <canvas id="price-chart"></canvas>
+      </div>
+      <p class="chart-caption" id="chart-caption">Fiyat grafiği</p>
+
+      <div class="chart-container chart-container-sm">
+        <canvas id="change-chart"></canvas>
+      </div>
+      <p class="chart-caption">Dönemlik yükseliş (yeşil) / düşüş (kırmızı) %</p>
+
+      <div class="detail-news-wrap">
+        <h3>Son haberler</h3>
+        <ul class="news-list" id="detail-news"></ul>
+      </div>
+    </section>
+  </main>
+
+  <section class="panel news-section">
+    <h2>Son haberler</h2>
+    <ul class="news-feed" id="news-feed"></ul>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

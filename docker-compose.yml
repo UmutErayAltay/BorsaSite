@@ -1,0 +1,21 @@
+# F0: SQLite yerel çalışır. PostgreSQL F1+ haber/tahmin için hazır.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: borsa-postgres
+    environment:
+      POSTGRES_USER: borsa
+      POSTGRES_PASSWORD: borsa
+      POSTGRES_DB: borsa
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U borsa -d borsa"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
