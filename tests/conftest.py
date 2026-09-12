@@ -9,6 +9,10 @@ import pytest
 
 from pipeline.db import ConnWrapper, get_database_url, init_schema
 
+_db_url = get_database_url()
+if "localhost" not in _db_url and "127.0.0.1" not in _db_url:
+    pytest.exit("Refusing to run tests against a non-local DATABASE_URL", 1)
+
 
 @pytest.fixture
 def conn():

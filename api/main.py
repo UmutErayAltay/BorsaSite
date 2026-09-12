@@ -36,6 +36,12 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.on_event("startup")
+def _init_schema_on_startup() -> None:
+    with get_connection() as conn:
+        init_schema(conn)
+
+
 def _rows(cursor) -> list[dict[str, Any]]:
     return [dict(r) for r in cursor.fetchall()]
 
@@ -51,15 +57,13 @@ def dashboard():
 @app.get("/api/health")
 def health():
     with get_connection() as conn:
-        init_schema(conn)
-        sym = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
+        sym = conn.execute("SELECT COUNT(*) AS n FROM symbols").fetchone()["n"]
     return {"status": "ok", "symbols": sym}
 
 
 @app.get("/api/stats")
 def stats():
     with get_connection() as conn:
-        init_schema(conn)
         q = conn.execute(
             """
             SELECT
@@ -215,7 +219,6 @@ def symbol_chart(
 @app.get("/api/portfolio")
 def portfolio_summary():
     with get_connection() as conn:
-        init_schema(conn)
         cfg = load_trading_config()
         ensure_portfolio(conn, cfg.starting_balance)
         state = get_trading_state(conn)
@@ -252,7 +255,6 @@ def portfolio_summary():
 @app.get("/api/trades")
 def trade_history(limit: int = Query(50, ge=1, le=200)):
     with get_connection() as conn:
-        init_schema(conn)
         rows = _rows(
             conn.execute(
                 """

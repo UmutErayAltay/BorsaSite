@@ -14,15 +14,15 @@ def main() -> None:
     with get_connection() as conn:
         init_schema(conn)
 
-        total = conn.execute("SELECT COUNT(*) FROM news_sentiment").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) AS n FROM news_sentiment").fetchone()["n"]
         pending = conn.execute(
             """
-            SELECT COUNT(*) FROM news_raw n
+            SELECT COUNT(*) AS n FROM news_raw n
             LEFT JOIN news_sentiment s ON s.news_id = n.id
             WHERE s.news_id IS NULL
             """
-        ).fetchone()[0]
-        daily = conn.execute("SELECT COUNT(*) FROM sentiment_daily").fetchone()[0]
+        ).fetchone()["n"]
+        daily = conn.execute("SELECT COUNT(*) AS n FROM sentiment_daily").fetchone()["n"]
 
         print(f"Analiz edilmiş haber: {total}")
         print(f"Bekleyen haber: {pending}")

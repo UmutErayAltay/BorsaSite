@@ -164,7 +164,7 @@ class ConnWrapper:
     def __init__(self, conn: psycopg.Connection) -> None:
         self._conn = conn
 
-    def execute(self, sql: str, params: tuple = ()) -> psycopg.Cursor:
+    def execute(self, sql: str, params: tuple | None = None) -> psycopg.Cursor:
         cur = self._conn.cursor(row_factory=dict_row)
         cur.execute(sql.replace("?", "%s"), params)
         return cur

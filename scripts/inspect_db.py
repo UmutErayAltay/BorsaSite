@@ -31,7 +31,7 @@ def main() -> None:
         for row in symbols:
             print(f"  {row['market']}: {row['n']}")
 
-        total = conn.execute("SELECT COUNT(*) FROM prices_daily").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) AS n FROM prices_daily").fetchone()["n"]
         print(f"\nToplam fiyat satırı: {total}")
         print("\nÖrnek (ilk 10):")
         for row in prices:

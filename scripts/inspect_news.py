@@ -14,8 +14,8 @@ def main() -> None:
     with get_connection() as conn:
         init_schema(conn)
 
-        total = conn.execute("SELECT COUNT(*) FROM news_raw").fetchone()[0]
-        links = conn.execute("SELECT COUNT(*) FROM news_symbol_links").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) AS n FROM news_raw").fetchone()["n"]
+        links = conn.execute("SELECT COUNT(*) AS n FROM news_symbol_links").fetchone()["n"]
         print(f"Toplam haber: {total}")
         print(f"Hisse bağlantısı: {links}")
 

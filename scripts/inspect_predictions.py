@@ -13,7 +13,7 @@ from pipeline.db import get_connection, init_schema  # noqa: E402
 def main() -> None:
     with get_connection() as conn:
         init_schema(conn)
-        total = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) AS n FROM predictions").fetchone()["n"]
         print(f"Toplam tahmin: {total}\n")
 
         print("En yüksek yükselme olasılığı (10):")
