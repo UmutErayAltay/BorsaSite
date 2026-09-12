@@ -1,0 +1,14 @@
+starting_balance: 100000.0
+
+buy_threshold: 0.62
+sell_threshold: 0.50
+max_hold_days: 10
+
+max_open_positions: 8
+max_position_pct: 0.15
+max_portfolio_exposure_pct: 0.90
+
+commission_pct: 0.05
+bsmv_pct_of_commission: 5.0
+min_commission_try: 5.0
+min_position_value_try: 500.0
