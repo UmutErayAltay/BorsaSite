@@ -30,6 +30,7 @@ def run(
     skip_sentiment: bool = False,
     skip_train: bool = True,
     skip_predict: bool = False,
+    skip_trading: bool = False,
     relink_news: bool = True,
     log_dir: Path | None = None,
 ) -> dict:
@@ -93,6 +94,20 @@ def run(
     if not skip_predict:
         step("predict", lambda: predict_model())
 
+    if not skip_trading:
+        step("trading", _run_trading_step)
+
     results["total_seconds"] = round(time.time() - started, 1)
     logger.info("Pipeline bitti (%.1fs). Log: %s", results["total_seconds"], log_file)
     return results
+
+
+def _run_trading_step() -> dict:
+    from pipeline.db import get_connection, init_schema
+    from trading.config import load_trading_config
+    from trading.engine import run_once
+
+    cfg = load_trading_config()
+    with get_connection() as conn:
+        init_schema(conn)
+        return run_once(conn, cfg)
