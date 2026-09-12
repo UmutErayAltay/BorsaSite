@@ -1,0 +1,81 @@
+from datetime import date
+
+from pipeline.db import upsert_symbol
+from trading.config import TradingConfig
+from trading.portfolio import buy, ensure_portfolio, get_open_position, get_state, sell
+
+CFG = TradingConfig(
+    starting_balance=10000.0,
+    buy_threshold=0.62,
+    sell_threshold=0.50,
+    max_hold_days=10,
+    max_open_positions=2,
+    max_position_pct=0.5,
+    max_portfolio_exposure_pct=0.90,
+    commission_pct=0.05,
+    bsmv_pct_of_commission=5.0,
+    min_commission_try=1.0,
+    min_position_value_try=100.0,
+)
+
+
+def _symbol(conn) -> int:
+    return upsert_symbol(conn, "THYAO.IS", "BIST", "TRY")
+
+
+def test_buy_deducts_balance_and_fee(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+
+    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    assert ok is True
+    state = get_state(conn)
+    # pozisyon değeri: 10000 * %50 = 5000; komisyon: 5000*0.05%=2.5, BSMV: 2.5*5%=0.125, toplam 2.625
+    assert state.balance == 10000.0 - 5000.0 - 2.625
+    assert len(state.open_positions) == 1
+    assert state.open_positions[0].symbol_id == symbol_id
+
+
+def test_buy_rejects_when_balance_insufficient(conn):
+    ensure_portfolio(conn, 100.0)
+    symbol_id = _symbol(conn)
+
+    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    assert ok is False
+    assert "yetersiz" in reason.lower()
+
+
+def test_buy_rejects_when_max_open_positions_reached(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    sym1 = upsert_symbol(conn, "THYAO.IS", "BIST", "TRY")
+    sym2 = upsert_symbol(conn, "AKBNK.IS", "BIST", "TRY")
+    sym3 = upsert_symbol(conn, "GARAN.IS", "BIST", "TRY")
+
+    assert buy(conn, sym1, 10.0, 0.7, date(2026, 9, 10), CFG)[0] is True
+    assert buy(conn, sym2, 10.0, 0.7, date(2026, 9, 10), CFG)[0] is True
+    ok, reason = buy(conn, sym3, 10.0, 0.7, date(2026, 9, 10), CFG)
+
+    assert ok is False
+    assert "limit" in reason.lower()
+
+
+def test_sell_computes_net_pnl_after_both_fees(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+    buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    trade = sell(conn, symbol_id, price=110.0, exit_reason="prob_düştü", decision_date=date(2026, 9, 11), cfg=CFG)
+
+    assert trade is not None
+    assert trade.gross_pnl == 5000.0 * 0.10  # %10 fiyat artışı, 50 adet * 10 TL
+    assert trade.net_pnl < trade.gross_pnl  # iki yönlü komisyon düşülmüş olmalı
+    assert get_open_position(conn, symbol_id) is None
+
+
+def test_sell_returns_none_when_no_open_position(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+
+    assert sell(conn, symbol_id, 100.0, "prob_düştü", date(2026, 9, 10), CFG) is None
