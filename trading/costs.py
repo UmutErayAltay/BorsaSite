@@ -21,9 +21,9 @@ def calculate_fee(trade_value: float, cfg: TradingConfig) -> CommissionResult:
     bsmv = commission * (cfg.bsmv_pct_of_commission / 100.0)
     total_fee = max(commission + bsmv, cfg.min_commission_try)
     return CommissionResult(
-        commission=round(commission, 4),
-        bsmv=round(bsmv, 4),
-        total_fee=round(total_fee, 4),
+        commission=round(commission, 2),
+        bsmv=round(bsmv, 2),
+        total_fee=round(total_fee, 2),
     )
 
 

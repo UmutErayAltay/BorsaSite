@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 from pipeline.db import upsert_symbol
@@ -31,17 +32,18 @@ def test_buy_deducts_balance_and_fee(conn):
 
     assert ok is True
     state = get_state(conn)
-    # pozisyon değeri: 10000 * %50 = 5000; komisyon: 5000*0.05%=2.5, BSMV: 2.5*5%=0.125, toplam 2.625
-    assert state.balance == 10000.0 - 5000.0 - 2.625
+    # pozisyon değeri: 10000 * %50 = 5000; komisyon: 5000*0.05%=2.5, BSMV: 0.125→0.12 (2 ondalık), toplam 2.62
+    assert state.balance == 10000.0 - 5000.0 - 2.62
     assert len(state.open_positions) == 1
     assert state.open_positions[0].symbol_id == symbol_id
 
 
 def test_buy_rejects_when_balance_insufficient(conn):
-    ensure_portfolio(conn, 100.0)
+    tiny_cfg = replace(CFG, max_position_pct=1.0, min_position_value_try=1.0, min_commission_try=5.0)
+    ensure_portfolio(conn, 10.0)
     symbol_id = _symbol(conn)
 
-    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=tiny_cfg)
 
     assert ok is False
     assert "yetersiz" in reason.lower()
