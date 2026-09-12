@@ -172,14 +172,21 @@ kapanan işlemleri (brüt/net kâr, ödenen komisyon ayrı ayrı) gösterir.
 
 ## Canlı dağıtım
 
+Dashboard ve günlük pipeline iki ayrı yerde çalışır — Render Cron Job'lar
+ödeme bilgisi gerektirdiği için (aylık asgari $1) günlük iş GitHub Actions'a
+taşındı, tamamen ücretsiz.
+
 1. Bir Supabase projesi oluştur, `pipeline/db.py::SCHEMA_SQL`'i uygula.
-2. Render'da bu repoyu Blueprint (`render.yaml`) ile bağla.
-3. Her iki serviste de (`borsa-ai-dashboard`, `borsa-ai-daily`)
-   `DATABASE_URL` (Supabase connection string) ve `HF_TOKEN`'ı elle gir.
-4. `borsa-ai-daily` Cron Job'ı hafta içi her gün BIST kapanışından sonra
-   (19:00 İstanbul = 16:00 UTC) otomatik çalışır: fiyat → haber → eşleştirme
-   → sentiment → tahmin → alım-satım. Pazartesi günleri model de otomatik
-   yeniden eğitilir.
+2. **Dashboard (Render):** Render'da bu repoyu Blueprint (`render.yaml`) ile
+   bağla, `borsa-ai-dashboard` servisine `DATABASE_URL`'i (Supabase
+   connection string) elle gir.
+3. **Günlük pipeline (GitHub Actions):** Repo → Settings → Secrets and
+   variables → Actions → `DATABASE_URL` ve `HF_TOKEN` secret'larını ekle.
+   `.github/workflows/daily-trading.yml` hafta içi her gün BIST
+   kapanışından sonra (19:00 İstanbul = 16:00 UTC) otomatik çalışır: fiyat
+   → haber → eşleştirme → sentiment → tahmin → alım-satım. Pazartesi
+   günleri model de otomatik yeniden eğitilir. Actions sekmesinden "Run
+   workflow" ile elle de tetiklenebilir.
 
 ## Sonraki fazlar
 

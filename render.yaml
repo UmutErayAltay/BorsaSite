@@ -1,6 +1,12 @@
 # Render Blueprint — https://render.com/docs/blueprint-spec
 # Kullanım: Render Dashboard → New → Blueprint → bu repo'yu seç.
 # sync: false olan değişkenlerin DEĞERLERİ dashboard'dan elle girilir.
+#
+# Günlük alım-satım pipeline'ı BURADA değil, GitHub Actions'ta çalışıyor
+# (.github/workflows/daily-trading.yml) — Render Cron Job servisleri ödeme
+# bilgisi gerektiriyor (aylık asgari $1), GitHub Actions public repo için
+# tamamen ücretsiz ve süre sınırı çok daha gevşek (ML modelleri indirmek
+# dakikalar sürebiliyor).
 services:
   - type: web
     name: borsa-ai-dashboard
@@ -12,21 +18,4 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
-        sync: false
-      - key: HF_TOKEN
-        sync: false
-
-  - type: cron
-    name: borsa-ai-daily
-    runtime: python
-    plan: starter
-    schedule: "0 16 * * 1-5"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/run_daily.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
-      - key: DATABASE_URL
-        sync: false
-      - key: HF_TOKEN
         sync: false
