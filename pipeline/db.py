@@ -193,7 +193,12 @@ class ConnWrapper:
 
 @contextmanager
 def get_connection() -> Generator[ConnWrapper, None, None]:
-    raw = psycopg.connect(get_database_url())
+    # prepare_threshold=None: Supabase'in transaction-mode pooler'ı (port 6543,
+    # Supavisor/PgBouncer) her sorguyu farklı bir arka uç bağlantısına
+    # yönlendirebilir — psycopg'nin varsayılan server-side prepared statement
+    # davranışı bu modda "prepared statement already exists" hatasına yol
+    # açar (canlıda gerçekleşti, GitHub Actions log'unda doğrulandı).
+    raw = psycopg.connect(get_database_url(), prepare_threshold=None)
     wrapper = ConnWrapper(raw)
     try:
         yield wrapper
