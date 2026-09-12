@@ -90,6 +90,46 @@ def get_open_position(conn, symbol_id: int) -> Position | None:
     return _row_to_position(row) if row else None
 
 
+def current_price(conn, symbol_id: int, fallback: float) -> float:
+    """En son kapanış fiyatı, yoksa `fallback`'e düşer (ör. henüz fiyat
+    çekilmemiş yeni bir sembol) — `/api/portfolio` ve snapshot kaydı bunu paylaşır."""
+    row = conn.execute(
+        "SELECT close FROM prices_daily WHERE symbol_id = ? ORDER BY date DESC LIMIT 1",
+        (symbol_id,),
+    ).fetchone()
+    return float(row["close"]) if row else fallback
+
+
+def positions_market_value(conn, positions: list[Position]) -> float:
+    return sum(current_price(conn, p.symbol_id, p.entry_price) * p.quantity for p in positions)
+
+
+def record_snapshot(conn, snapshot_date: date) -> None:
+    """Günün sonunda toplam portföy değerini (nakit + açık pozisyonlar) kaydeder
+    — dashboard'daki 'zaman içinde ne kadar büyüdü' eğrisi bu tablodan gelir.
+    Aynı günde tekrar çalıştırılırsa (elle yeniden tetikleme) o günün satırını
+    üzerine yazar, yinelenen satır oluşturmaz."""
+    state = get_state(conn)
+    positions_value = positions_market_value(conn, state.open_positions)
+    total_value = state.balance + positions_value
+    conn.execute(
+        """
+        INSERT INTO portfolio_snapshots (snapshot_date, balance, positions_value, total_value)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (snapshot_date) DO UPDATE SET
+            balance = excluded.balance,
+            positions_value = excluded.positions_value,
+            total_value = excluded.total_value
+        """,
+        (
+            snapshot_date.isoformat(),
+            round(state.balance, 2),
+            round(positions_value, 2),
+            round(total_value, 2),
+        ),
+    )
+
+
 def buy(
     conn,
     symbol_id: int,

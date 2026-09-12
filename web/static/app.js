@@ -2,6 +2,7 @@ const API = "";
 let currentMarket = "";
 let priceChart = null;
 let changeChart = null;
+let equityChart = null;
 let allPredictions = [];
 let selectedTicker = null;
 let currentInterval = "1d";
@@ -333,21 +334,26 @@ async function loadNewsFeed() {
 async function loadPortfolio() {
   const data = await fetchJSON("/api/portfolio");
   const el = document.getElementById("portfolio-stats");
+  const growthPct = ((data.total_value - data.starting_balance) / data.starting_balance) * 100;
+  const growthClass = growthPct >= 0 ? "sentiment-pos" : "sentiment-neg";
   const cards = [
     ["Nakit", `${data.balance.toLocaleString("tr")} TL`],
     ["Pozisyon değeri", `${data.positions_value.toLocaleString("tr")} TL`],
     ["Toplam varlık", `${data.total_value.toLocaleString("tr")} TL`],
     ["Başlangıç", `${data.starting_balance.toLocaleString("tr")} TL`],
+    ["Büyüme", `${growthPct >= 0 ? "+" : ""}${growthPct.toFixed(2)}%`, growthClass],
   ];
   el.innerHTML = cards
     .map(
-      ([label, value]) => `
+      ([label, value, cls]) => `
     <div class="stat-card">
-      <div class="value">${value}</div>
+      <div class="value${cls ? " " + cls : ""}">${value}</div>
       <div class="label">${label}</div>
     </div>`
     )
     .join("");
+
+  await loadEquityChart();
 
   const tbody = document.getElementById("positions-body");
   tbody.innerHTML =
@@ -365,6 +371,65 @@ async function loadPortfolio() {
       </tr>`;
       })
       .join("") || `<tr><td colspan="6">Açık pozisyon yok.</td></tr>`;
+}
+
+async function loadEquityChart() {
+  const data = await fetchJSON("/api/portfolio/history");
+  const ctx = document.getElementById("equity-chart");
+  if (equityChart) equityChart.destroy();
+
+  if (!data.items.length) {
+    equityChart = new Chart(ctx, { type: "line", data: { labels: [], datasets: [] } });
+    return;
+  }
+
+  const values = data.items.map((s) => s.total_value);
+  const isUp = values[values.length - 1] >= values[0];
+  const lineColor = isUp ? "#22c55e" : "#ef4444";
+  const fillColor = isUp ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)";
+
+  equityChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: data.items.map((s) => s.snapshot_date),
+      datasets: [
+        {
+          label: "Toplam varlık",
+          data: values,
+          borderColor: lineColor,
+          backgroundColor: fillColor,
+          fill: true,
+          tension: 0.15,
+          pointRadius: data.items.length > 80 ? 0 : 2,
+          pointHoverRadius: 4,
+          borderWidth: 2.5,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => `Toplam varlık: ${Number(c.raw).toFixed(2)} TL`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: "#8b9cb3", maxTicksLimit: 10, maxRotation: 0 },
+          grid: { color: "rgba(42,53,72,0.6)" },
+        },
+        y: {
+          ticks: { color: "#8b9cb3" },
+          grid: { color: "rgba(42,53,72,0.6)" },
+        },
+      },
+    },
+  });
 }
 
 async function loadTrades() {

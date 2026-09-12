@@ -1,9 +1,17 @@
 from dataclasses import replace
 from datetime import date
 
-from pipeline.db import upsert_symbol
+from pipeline.db import upsert_prices, upsert_symbol
 from trading.config import TradingConfig
-from trading.portfolio import buy, ensure_portfolio, get_open_position, get_state, sell
+from trading.portfolio import (
+    buy,
+    ensure_portfolio,
+    get_open_position,
+    get_state,
+    positions_market_value,
+    record_snapshot,
+    sell,
+)
 
 CFG = TradingConfig(
     starting_balance=10000.0,
@@ -81,3 +89,54 @@ def test_sell_returns_none_when_no_open_position(conn):
     symbol_id = _symbol(conn)
 
     assert sell(conn, symbol_id, 100.0, "prob_düştü", date(2026, 9, 10), CFG) is None
+
+
+def test_positions_market_value_uses_latest_close(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+    buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+    upsert_prices(conn, symbol_id, iter([("2026-09-11", 120.0, 120.0, 120.0, 120.0, 120.0, 1000)]))
+
+    state = get_state(conn)
+    value = positions_market_value(conn, state.open_positions)
+
+    assert value == state.open_positions[0].quantity * 120.0
+
+
+def test_positions_market_value_falls_back_to_entry_price_without_prices(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+    buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    state = get_state(conn)
+    value = positions_market_value(conn, state.open_positions)
+
+    assert value == state.open_positions[0].quantity * 100.0
+
+
+def test_record_snapshot_stores_totals(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+    buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    record_snapshot(conn, date(2026, 9, 10))
+
+    row = conn.execute(
+        "SELECT balance, positions_value, total_value FROM portfolio_snapshots WHERE snapshot_date = ?",
+        ("2026-09-10",),
+    ).fetchone()
+    state = get_state(conn)
+    assert float(row["balance"]) == state.balance
+    assert float(row["total_value"]) == round(state.balance + float(row["positions_value"]), 2)
+
+
+def test_record_snapshot_overwrites_same_day(conn):
+    ensure_portfolio(conn, CFG.starting_balance)
+    record_snapshot(conn, date(2026, 9, 10))
+    record_snapshot(conn, date(2026, 9, 10))
+
+    rows = conn.execute(
+        "SELECT COUNT(*) AS n FROM portfolio_snapshots WHERE snapshot_date = ?",
+        ("2026-09-10",),
+    ).fetchone()
+    assert rows["n"] == 1

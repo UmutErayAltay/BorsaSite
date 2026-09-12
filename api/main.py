@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from api.chart_data import INTERVALS, get_chart_data
 from pipeline.db import get_connection, init_schema
 from trading.config import load_trading_config
-from trading.portfolio import ensure_portfolio, get_state as get_trading_state
+from trading.portfolio import current_price, ensure_portfolio, get_state as get_trading_state
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = PROJECT_ROOT / "web"
@@ -226,19 +226,15 @@ def portfolio_summary():
         positions_value = 0.0
         for p in state.open_positions:
             sym = conn.execute("SELECT ticker, name FROM symbols WHERE id = ?", (p.symbol_id,)).fetchone()
-            last = conn.execute(
-                "SELECT close FROM prices_daily WHERE symbol_id = ? ORDER BY date DESC LIMIT 1",
-                (p.symbol_id,),
-            ).fetchone()
-            current_price = float(last["close"]) if last else p.entry_price
-            market_value = current_price * p.quantity
+            price = current_price(conn, p.symbol_id, p.entry_price)
+            market_value = price * p.quantity
             positions_value += market_value
             positions.append({
                 "ticker": sym["ticker"] if sym else "?",
                 "name": sym["name"] if sym else None,
                 "entry_price": p.entry_price,
                 "quantity": round(p.quantity, 6),
-                "current_price": current_price,
+                "current_price": price,
                 "market_value": round(market_value, 2),
                 "unrealized_pnl": round(market_value - p.entry_price * p.quantity, 2),
                 "opened_at": p.opened_at,
@@ -250,6 +246,24 @@ def portfolio_summary():
         "total_value": round(state.balance + positions_value, 2),
         "open_positions": positions,
     }
+
+
+@app.get("/api/portfolio/history")
+def portfolio_history(days: int = Query(365, ge=1, le=3650)):
+    with get_connection() as conn:
+        rows = _rows(
+            conn.execute(
+                """
+                SELECT snapshot_date, balance, positions_value, total_value
+                FROM portfolio_snapshots
+                ORDER BY snapshot_date DESC
+                LIMIT ?
+                """,
+                (days,),
+            )
+        )
+    rows.reverse()
+    return {"items": rows, "count": len(rows)}
 
 
 @app.get("/api/trades")

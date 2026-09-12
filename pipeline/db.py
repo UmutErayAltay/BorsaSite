@@ -146,6 +146,17 @@ CREATE TABLE IF NOT EXISTS trade_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_trades_closed_at ON trades(closed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_decisions_date ON trade_decisions(decision_date DESC);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id SERIAL PRIMARY KEY,
+    snapshot_date DATE NOT NULL UNIQUE,
+    balance NUMERIC(14,2) NOT NULL,
+    positions_value NUMERIC(14,2) NOT NULL,
+    total_value NUMERIC(14,2) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_date ON portfolio_snapshots(snapshot_date DESC);
 """
 
 

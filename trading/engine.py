@@ -123,4 +123,5 @@ def run_once(conn, cfg: TradingConfig, decision_date: date | None = None) -> dic
             stats["rejected"] += 1
             _log_decision(conn, decision_date, symbol_id, "red", reason, prob_up)
 
+    pf.record_snapshot(conn, decision_date)
     return stats

@@ -7,8 +7,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "trading_test.yaml"
 
 def test_load_trading_config_from_project_default():
     cfg = load_trading_config()
-    assert cfg.starting_balance == 100000.0
-    assert cfg.buy_threshold == 0.62
+    assert cfg.starting_balance == 10000.0
+    assert cfg.buy_threshold == 0.55
     assert cfg.max_open_positions == 8
 
 

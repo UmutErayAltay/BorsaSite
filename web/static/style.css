@@ -96,6 +96,9 @@ body {
   margin-top: 0.25rem;
 }
 
+.stat-card .value.sentiment-pos { color: var(--up); }
+.stat-card .value.sentiment-neg { color: var(--down); }
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
