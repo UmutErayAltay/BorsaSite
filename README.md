@@ -25,7 +25,8 @@ Günlük güncelleme (son 7 gün):
 python scripts/run_fetch_prices.py --incremental 7
 ```
 
-Veritabanı varsayılan: `data/borsa.db` (SQLite).
+Veritabanı: PostgreSQL. Yerelde `docker compose up -d db`, canlıda Supabase.
+`.env`'de `DATABASE_URL` (bkz. `.env.example`).
 
 ## Haber verisi çekme (F1)
 
@@ -152,6 +153,33 @@ docker compose up -d db
 ```
 
 `DATABASE_URL=postgresql://borsa:borsa@localhost:5432/borsa` — PostgreSQL entegrasyonu sonraki fazda.
+
+## Sanal alım-satım (F5)
+
+Mevcut tahminleri (`prob_up`) kullanarak SADECE BIST hisselerinde, sahte
+100.000 TL ile eşik-bazlı otomatik alım-satım yapar — gerçek emir
+göndermez. Her işlemde komisyon + BSMV gerçekçi şekilde hesaba katılır.
+Parametreler: `config/trading.yaml`.
+
+```bash
+python scripts/run_trading.py
+```
+
+Dashboard'daki "Portföy" bölümü güncel bakiyeyi, açık pozisyonları ve
+kapanan işlemleri (brüt/net kâr, ödenen komisyon ayrı ayrı) gösterir.
+
+**Uyarı:** Tamamen simülasyondur; yatırım tavsiyesi değildir.
+
+## Canlı dağıtım
+
+1. Bir Supabase projesi oluştur, `pipeline/db.py::SCHEMA_SQL`'i uygula.
+2. Render'da bu repoyu Blueprint (`render.yaml`) ile bağla.
+3. Her iki serviste de (`borsa-ai-dashboard`, `borsa-ai-daily`)
+   `DATABASE_URL` (Supabase connection string) ve `HF_TOKEN`'ı elle gir.
+4. `borsa-ai-daily` Cron Job'ı hafta içi her gün BIST kapanışından sonra
+   (19:00 İstanbul = 16:00 UTC) otomatik çalışır: fiyat → haber → eşleştirme
+   → sentiment → tahmin → alım-satım. Pazartesi günleri model de otomatik
+   yeniden eğitilir.
 
 ## Sonraki fazlar
 
