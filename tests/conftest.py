@@ -20,3 +20,24 @@ def conn():
     finally:
         raw.rollback()
         raw.close()
+
+
+@pytest.fixture
+def committed_conn():
+    """`conn` fixture'ının aksine, API testleri gerçek (ayrı bağlantılı)
+    bir istekle aynı veriyi görmeli — bu yüzden rollback yerine commit eder.
+    Test sonunda ilgili tabloları TRUNCATE ederek temizler."""
+    raw = psycopg.connect(get_database_url())
+    wrapper = ConnWrapper(raw)
+    init_schema(wrapper)
+    try:
+        yield wrapper
+        raw.commit()
+    finally:
+        cur = raw.cursor()
+        cur.execute(
+            "TRUNCATE trade_decisions, trades, positions, portfolio, "
+            "predictions, prices_daily, symbols RESTART IDENTITY CASCADE"
+        )
+        raw.commit()
+        raw.close()

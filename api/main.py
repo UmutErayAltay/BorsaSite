@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.chart_data import INTERVALS, get_chart_data
 from pipeline.db import get_connection, init_schema
+from trading.portfolio import get_state as get_trading_state
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = PROJECT_ROOT / "web"
@@ -208,6 +209,82 @@ def symbol_chart(
         except Exception as e:
             raise HTTPException(502, f"Grafik verisi alınamadı: {e}") from e
     return {"ticker": ticker, "name": sym["name"], "market": sym["market"], **data}
+
+
+@app.get("/api/portfolio")
+def portfolio_summary():
+    with get_connection() as conn:
+        init_schema(conn)
+        state = get_trading_state(conn)
+        positions = []
+        positions_value = 0.0
+        for p in state.open_positions:
+            sym = conn.execute("SELECT ticker, name FROM symbols WHERE id = ?", (p.symbol_id,)).fetchone()
+            last = conn.execute(
+                "SELECT close FROM prices_daily WHERE symbol_id = ? ORDER BY date DESC LIMIT 1",
+                (p.symbol_id,),
+            ).fetchone()
+            current_price = float(last["close"]) if last else p.entry_price
+            market_value = current_price * p.quantity
+            positions_value += market_value
+            positions.append({
+                "ticker": sym["ticker"] if sym else "?",
+                "name": sym["name"] if sym else None,
+                "entry_price": p.entry_price,
+                "quantity": round(p.quantity, 6),
+                "current_price": current_price,
+                "market_value": round(market_value, 2),
+                "unrealized_pnl": round(market_value - p.entry_price * p.quantity, 2),
+                "opened_at": p.opened_at,
+            })
+    return {
+        "balance": round(state.balance, 2),
+        "starting_balance": state.starting_balance,
+        "positions_value": round(positions_value, 2),
+        "total_value": round(state.balance + positions_value, 2),
+        "open_positions": positions,
+    }
+
+
+@app.get("/api/trades")
+def trade_history(limit: int = Query(50, ge=1, le=200)):
+    with get_connection() as conn:
+        init_schema(conn)
+        rows = _rows(
+            conn.execute(
+                """
+                SELECT t.*, s.ticker, s.name
+                FROM trades t
+                JOIN symbols s ON s.id = t.symbol_id
+                ORDER BY t.closed_at DESC, t.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        )
+        totals = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS trade_count,
+                COALESCE(SUM(net_pnl), 0) AS total_net_pnl,
+                COALESCE(SUM(fees_paid), 0) AS total_fees,
+                COALESCE(SUM(gross_pnl), 0) AS total_gross_pnl,
+                COALESCE(SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END), 0) AS wins
+            FROM trades
+            """
+        ).fetchone()
+    trade_count = int(totals["trade_count"])
+    return {
+        "items": rows,
+        "count": len(rows),
+        "totals": {
+            "trade_count": trade_count,
+            "total_gross_pnl": round(float(totals["total_gross_pnl"]), 2),
+            "total_fees": round(float(totals["total_fees"]), 2),
+            "total_net_pnl": round(float(totals["total_net_pnl"]), 2),
+            "win_rate": round(int(totals["wins"]) / trade_count * 100, 1) if trade_count else None,
+        },
+    }
 
 
 @app.get("/api/prices/{ticker}")
