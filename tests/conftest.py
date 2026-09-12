@@ -37,6 +37,7 @@ def committed_conn():
         yield wrapper
         raw.commit()
     finally:
+        raw.rollback()
         cur = raw.cursor()
         cur.execute(
             "TRUNCATE trade_decisions, trades, positions, portfolio, "
