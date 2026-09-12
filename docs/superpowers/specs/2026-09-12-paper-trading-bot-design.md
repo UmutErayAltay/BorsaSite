@@ -46,21 +46,46 @@ projesinden zaten bilinen/tanıdık bir "uyandır" deseni var.
 
 ## Veri Katmanı Değişiklikleri
 
-### Şema taşıma
+### Şema taşıma — küçültülmüş kapsam (kod incelemesiyle doğrulandı)
+
+Kod taraması şunu gösterdi: `?` placeholder, `INSERT OR IGNORE`,
+`cur.lastrowid`, `conn.total_changes` gibi SQLite'a özgü her şey **sadece
+`pipeline/db.py` içinde** yaşıyor. Diğer 15 çağrı noktası (`api/main.py`,
+`api/chart_data.py`, `pipeline/analyze_sentiment.py`, `pipeline/dataset.py`,
+`pipeline/entity_linker.py`, `pipeline/kap_sync.py`, 5× `scripts/
+inspect_*.py`) sadece düz `conn.execute(sql, params)` + `row["col"]`
+(dict-tarzı) erişim kullanıyor, tuple-index erişim (`row[0]`) YOK. Bu, tüm
+taşımanın **sadece `pipeline/db.py`'a dokunarak** yapılabileceği anlamına
+gelir — diğer 15 dosyaya hiç dokunulmaz.
+
+`get_connection()`, gerçek bir `psycopg` bağlantısını sarmalayan ince bir
+uyumluluk sınıfı döndürür:
+- `.execute(sql, params)` — `sql.replace("?", "%s")` yapıp bir cursor açar,
+  çalıştırır, cursor'ı döner (sqlite3.Connection'ın `execute()` kısayolunu
+  taklit eder — psycopg'de bu kısayol yok, `cursor()` gerekir)
+- `row_factory=psycopg.rows.dict_row` — dönen satırlar zaten `dict`,
+  `row["col"]` ve `dict(row)` mevcut kodda değişiklik gerektirmeden çalışır
+- `.executemany(sql, rows)` — aynı `?`→`%s` çevirisiyle
+- Varsayım: hiçbir SQL metninde placeholder OLMAYAN gerçek bir `?` karakteri
+  yok (kod taramasıyla doğrulandı — hepsi ya sayı/metin karşılaştırması ya
+  da LIKE deseni, literal `?` içeren yok). Test paketi (gerçek Postgres'e
+  karşı) bunu kırılırsa hemen yakalar.
+
 `pipeline/db.py::SCHEMA_SQL` (mevcut `symbols`, `prices_daily`, `news_raw`,
 `news_symbol_links`, `news_sentiment`, `sentiment_daily`, `predictions`
-tabloları) SQLite söz diziminden Postgres'e çevrilecek:
-- `INTEGER PRIMARY KEY AUTOINCREMENT` → `SERIAL PRIMARY KEY` / `BIGSERIAL`
-- `datetime('now')` → `NOW()`
-- `?` parametre placeholder'ları → `%s` (psycopg tarzı)
-- `INSERT ... ON CONFLICT(...) DO UPDATE` — söz dizimi neredeyse birebir
-  aynı, sadece `excluded.` referansları kontrol edilecek (Postgres'te de
-  aynı isimle çalışıyor)
-- `sqlite3.Row` (dict benzeri satır erişimi) → `psycopg.rows.dict_row`
+tabloları) Postgres söz dizimine çevrilecek:
+- `INTEGER PRIMARY KEY AUTOINCREMENT` → `SERIAL PRIMARY KEY`
+- `datetime('now')` → `NOW()`, kolon tipleri `TIMESTAMPTZ`
+- `INSERT OR IGNORE INTO news_raw ...` → `INSERT INTO ... ON CONFLICT (url)
+  DO NOTHING RETURNING id` (dönen satır yoksa zaten yok sayıldı demektir —
+  `cur.lastrowid` yerine `RETURNING id` + `cur.fetchone()`)
+- `conn.total_changes` (upsert_prices'ın dönüş değeri) → `cur.rowcount`
+  toplamı (executemany sonrası psycopg'nin kendi `rowcount`'u)
+- `INSERT ... ON CONFLICT(...) DO UPDATE ... excluded.col` — söz dizimi
+  Postgres'te de aynı, değişiklik gerekmez
 
 `get_connection()` bağlam yöneticisi imzası (commit/rollback/close) aynı
-kalacak — çağıran kod (api/main.py, pipeline/*.py) mümkün olduğunca
-değişmeden kalsın diye.
+kalacak.
 
 ### Yeni tablolar (bu spesifikasyona özel)
 
