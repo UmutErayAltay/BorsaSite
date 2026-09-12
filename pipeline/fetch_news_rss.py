@@ -106,6 +106,12 @@ def process_entry(
         return
 
     url = normalize_url(link)
+    if not url.startswith(("http://", "https://")):
+        # RSS/Atom `link`/`id` alanı serbest metin olabilir (spec bunu zorlamaz) —
+        # `javascript:`/`data:` gibi bir şema depolanıp sonradan dashboard'da
+        # <a href> olarak render edilirse XSS'e yol açar. Kaynağında reddet.
+        stats["skipped"] += 1
+        return
     summary = entry_summary(entry)
     published_at = parse_published(entry)
     language = feed.get("language", "tr")

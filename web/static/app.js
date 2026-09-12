@@ -13,6 +13,28 @@ async function fetchJSON(path) {
   return res.json();
 }
 
+// Haberler RSS/KAP kaynaklarından geliyor — dış, güvenilmeyen veri. innerHTML'e
+// yazılmadan önce kaçışlanmalı (stored XSS'i önler), href de sadece http(s)
+// şemalarına izin vermeli (javascript: URL'lerini önler).
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[c]);
+}
+
+function safeHref(url) {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : "#";
+  } catch {
+    return "#";
+  }
+}
+
 function formatProb(p) {
   return `${(p * 100).toFixed(1)}%`;
 }
@@ -281,8 +303,8 @@ async function selectSymbol(ticker, rowEl) {
     .map(
       (n) => `
     <li>
-      <a href="${n.url}" target="_blank" rel="noopener">${n.title}</a>
-      <div class="news-meta">${n.source || ""} · ${n.published_at || ""} ${
+      <a href="${safeHref(n.url)}" target="_blank" rel="noopener">${escapeHtml(n.title)}</a>
+      <div class="news-meta">${escapeHtml(n.source || "")} · ${escapeHtml(n.published_at || "")} ${
         n.score != null ? `· sentiment ${Number(n.score).toFixed(2)}` : ""
       }</div>
     </li>`
@@ -297,8 +319,8 @@ async function loadNewsFeed() {
     .map(
       (n) => `
     <li>
-      <a href="${n.url}" target="_blank" rel="noopener">${n.title}</a>
-      <div class="news-meta">${n.source} · ${n.published_at || ""} ${
+      <a href="${safeHref(n.url)}" target="_blank" rel="noopener">${escapeHtml(n.title)}</a>
+      <div class="news-meta">${escapeHtml(n.source)} · ${escapeHtml(n.published_at || "")} ${
         n.sentiment_score != null
           ? `· <span class="${n.sentiment_score > 0 ? "sentiment-pos" : "sentiment-neg"}">${Number(n.sentiment_score).toFixed(2)}</span>`
           : ""
