@@ -308,6 +308,77 @@ async function loadNewsFeed() {
     .join("");
 }
 
+async function loadPortfolio() {
+  const data = await fetchJSON("/api/portfolio");
+  const el = document.getElementById("portfolio-stats");
+  const cards = [
+    ["Nakit", `${data.balance.toLocaleString("tr")} TL`],
+    ["Pozisyon değeri", `${data.positions_value.toLocaleString("tr")} TL`],
+    ["Toplam varlık", `${data.total_value.toLocaleString("tr")} TL`],
+    ["Başlangıç", `${data.starting_balance.toLocaleString("tr")} TL`],
+  ];
+  el.innerHTML = cards
+    .map(
+      ([label, value]) => `
+    <div class="stat-card">
+      <div class="value">${value}</div>
+      <div class="label">${label}</div>
+    </div>`
+    )
+    .join("");
+
+  const tbody = document.getElementById("positions-body");
+  tbody.innerHTML =
+    data.open_positions
+      .map((p) => {
+        const pnlClass = p.unrealized_pnl >= 0 ? "sentiment-pos" : "sentiment-neg";
+        return `
+      <tr>
+        <td>${p.ticker}</td>
+        <td>${p.entry_price.toFixed(2)}</td>
+        <td>${p.current_price.toFixed(2)}</td>
+        <td>${p.quantity.toFixed(4)}</td>
+        <td class="${pnlClass}">${p.unrealized_pnl.toFixed(2)} TL</td>
+        <td>${p.opened_at}</td>
+      </tr>`;
+      })
+      .join("") || `<tr><td colspan="6">Açık pozisyon yok.</td></tr>`;
+}
+
+async function loadTrades() {
+  const data = await fetchJSON("/api/trades?limit=50");
+  const tbody = document.getElementById("trades-body");
+  tbody.innerHTML =
+    data.items
+      .map((t) => {
+        const pnlClass = t.net_pnl >= 0 ? "sentiment-pos" : "sentiment-neg";
+        return `
+      <tr>
+        <td>${t.ticker}</td>
+        <td>${Number(t.entry_price).toFixed(2)}</td>
+        <td>${Number(t.exit_price).toFixed(2)}</td>
+        <td>${Number(t.gross_pnl).toFixed(2)}</td>
+        <td>${Number(t.fees_paid).toFixed(2)}</td>
+        <td class="${pnlClass}">${Number(t.net_pnl).toFixed(2)}</td>
+        <td>${t.exit_reason}</td>
+        <td>${t.closed_at}</td>
+      </tr>`;
+      })
+      .join("") || `<tr><td colspan="8">Henüz kapanan işlem yok.</td></tr>`;
+
+  const summary = document.getElementById("trades-summary");
+  if (data.totals.trade_count) {
+    summary.textContent =
+      `Toplam ${data.totals.trade_count} işlem · ` +
+      `brüt ${data.totals.total_gross_pnl.toFixed(2)} TL · ` +
+      `komisyon ${data.totals.total_fees.toFixed(2)} TL · ` +
+      `net ${data.totals.total_net_pnl.toFixed(2)} TL · ` +
+      `kazanma oranı %${data.totals.win_rate ?? "—"}`;
+  } else {
+    summary.textContent = "";
+  }
+}
+
 document.querySelectorAll(".filter").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".filter").forEach((b) => b.classList.remove("active"));
@@ -337,6 +408,8 @@ async function init() {
     await loadStats();
     await loadPredictions();
     await loadNewsFeed();
+    await loadPortfolio();
+    await loadTrades();
   } catch (e) {
     console.error(e);
     document.body.insertAdjacentHTML(

@@ -92,6 +92,38 @@
     </section>
   </main>
 
+  <section class="panel" id="portfolio-section">
+    <h2>Portföy <span class="hint">— sanal, günlük otomatik alım-satım</span></h2>
+    <section class="stats" id="portfolio-stats"></section>
+
+    <h3>Açık pozisyonlar</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hisse</th><th>Giriş</th><th>Güncel</th><th>Adet</th>
+            <th>Gerçekleşmemiş K/Z</th><th>Açılış</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body"></tbody>
+      </table>
+    </div>
+
+    <h3>Kapanan işlemler</h3>
+    <p class="hint" id="trades-summary"></p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hisse</th><th>Giriş</th><th>Çıkış</th><th>Brüt K/Z</th>
+            <th>Komisyon</th><th>Net K/Z</th><th>Sebep</th><th>Kapanış</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="panel news-section">
     <h2>Son haberler</h2>
     <ul class="news-feed" id="news-feed"></ul>

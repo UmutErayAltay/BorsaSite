@@ -12,7 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from api.chart_data import INTERVALS, get_chart_data
 from pipeline.db import get_connection, init_schema
-from trading.portfolio import get_state as get_trading_state
+from trading.config import load_trading_config
+from trading.portfolio import ensure_portfolio, get_state as get_trading_state
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = PROJECT_ROOT / "web"
@@ -215,6 +216,8 @@ def symbol_chart(
 def portfolio_summary():
     with get_connection() as conn:
         init_schema(conn)
+        cfg = load_trading_config()
+        ensure_portfolio(conn, cfg.starting_balance)
         state = get_trading_state(conn)
         positions = []
         positions_value = 0.0
