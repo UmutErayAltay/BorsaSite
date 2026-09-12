@@ -18,6 +18,7 @@ def test_portfolio_endpoint_reflects_open_position(committed_conn):
     upsert_prices(committed_conn, symbol_id, [("2026-09-10", 100.0, 100.0, 100.0, 100.0, 100.0, 1000.0)])
     upsert_prediction(committed_conn, symbol_id, "2026-09-10", "2026-09-11", 0.75, 1, "1.0")
     run_once(committed_conn, cfg, decision_date=date(2026, 9, 10))
+    committed_conn.commit()
 
     response = client.get("/api/portfolio")
 
@@ -38,6 +39,7 @@ def test_trades_endpoint_reports_totals_after_a_closed_trade(committed_conn):
     upsert_prices(committed_conn, symbol_id, [("2026-09-11", 90.0, 90.0, 90.0, 90.0, 90.0, 1000.0)])
     upsert_prediction(committed_conn, symbol_id, "2026-09-11", "2026-09-12", 0.20, 0, "1.0")
     run_once(committed_conn, cfg, decision_date=date(2026, 9, 11))
+    committed_conn.commit()
 
     response = client.get("/api/trades")
 

@@ -30,6 +30,9 @@ def committed_conn():
     raw = psycopg.connect(get_database_url())
     wrapper = ConnWrapper(raw)
     init_schema(wrapper)
+    raw.commit()  # şema kurulumu idempotent ve tek seferlik — test gövdesi başlamadan
+                  # kilitleri bırakmak için hemen commit et, aksi halde API'nin kendi
+                  # init_schema() çağrısıyla kendi kendini kilitliyor
     try:
         yield wrapper
         raw.commit()
