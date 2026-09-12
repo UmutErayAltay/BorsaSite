@@ -4,7 +4,6 @@
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,21 +21,22 @@ def main() -> None:
     )
     parser.add_argument("--days", type=int, default=7, help="Fiyat: son N gün")
     parser.add_argument("--skip-sentiment", action="store_true")
-    parser.add_argument("--train", action="store_true", help="Modeli yeniden eğit (yavaş)")
+    parser.add_argument("--skip-train", action="store_true", help="Yeniden eğitimi atla")
     parser.add_argument("--skip-predict", action="store_true")
     parser.add_argument("--skip-trading", action="store_true", help="Alım-satım adımını atla")
     parser.add_argument("--no-relink", action="store_true", help="Haber eşleştirmesini atla")
     args = parser.parse_args()
 
-    # Render Cron Job her gün aynı komutu çalıştırır — haftalık yeniden
-    # eğitimi ayrı bir zamanlanmış iş yerine, aynı script içinde gün
-    # kontrolüyle tetikliyoruz (tek cron job, tek yerde mantık).
-    auto_train = args.train or datetime.now().weekday() == 0  # Pazartesi
-
+    # GitHub Actions runner'ı her çalıştırmada SIFIRDAN bir checkout —
+    # data/ (dolayısıyla eğitilmiş model dosyası) hiçbir zaman kalıcı olmuyor,
+    # bu yüzden "haftada bir eğit" burada anlamsız: model her seferinde zaten
+    # yeniden eğitilmek ZORUNDA, aksi halde predict adımı FileNotFoundError
+    # ile başarısız olur. XGBoost eğitimi hızlı (birkaç saniye) — asıl süre
+    # haber/sentiment adımında (~5dk), eğitim orada bir rounding error.
     result = run(
         incremental_days=args.days,
         skip_sentiment=args.skip_sentiment,
-        skip_train=not auto_train,
+        skip_train=args.skip_train,
         skip_predict=args.skip_predict,
         skip_trading=args.skip_trading,
         relink_news=not args.no_relink,

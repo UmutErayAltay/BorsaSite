@@ -124,10 +124,13 @@ python scripts/run_relink.py        # RSS haberleri yeniden eşleştir
 python scripts/run_daily.py
 ```
 
-Haftada bir model yenileme:
+`run_daily.py` her çalıştırmada modeli de yeniden eğitir (XGBoost eğitimi
+hızlı, birkaç saniye) — GitHub Actions'ın her seferinde sıfırdan bir checkout
+olması nedeniyle eğitilmiş model dosyası hiçbir zaman kalıcı olmuyor.
+Eğitimi atlamak istersen:
 
 ```bash
-python scripts/run_daily.py --train
+python scripts/run_daily.py --skip-train
 ```
 
 Windows zamanlayıcı (her gün 19:00):
