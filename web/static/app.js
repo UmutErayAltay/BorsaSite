@@ -490,6 +490,15 @@ document.querySelectorAll(".interval").forEach((btn) => {
 
 document.getElementById("btn-close-chart").addEventListener("click", closeChartPanel);
 
+document.querySelectorAll(".view-tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".view-tab").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("view-predictions").classList.toggle("hidden", btn.dataset.view !== "predictions");
+    document.getElementById("view-bot").classList.toggle("hidden", btn.dataset.view !== "bot");
+  });
+});
+
 async function init() {
   try {
     await loadStats();

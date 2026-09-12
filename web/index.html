@@ -21,6 +21,12 @@
     <p class="disclaimer">Bilgilendirme amaçlıdır. Yatırım tavsiyesi değildir.</p>
   </header>
 
+  <nav class="view-tabs">
+    <button type="button" class="view-tab active" data-view="predictions">📊 Tahminler</button>
+    <button type="button" class="view-tab" data-view="bot">🤖 Bot</button>
+  </nav>
+
+  <div id="view-predictions">
   <section class="stats" id="stats"></section>
 
   <div class="toolbar">
@@ -92,7 +98,13 @@
     </section>
   </main>
 
-  <section class="panel" id="portfolio-section">
+  <section class="panel news-section">
+    <h2>Son haberler</h2>
+    <ul class="news-feed" id="news-feed"></ul>
+  </section>
+  </div>
+
+  <section class="panel hidden" id="view-bot">
     <h2>🤖 Bot <span class="hint">— sanal, günlük otomatik alım-satım</span></h2>
     <section class="stats" id="portfolio-stats"></section>
 
@@ -127,11 +139,6 @@
         <tbody id="trades-body"></tbody>
       </table>
     </div>
-  </section>
-
-  <section class="panel news-section">
-    <h2>Son haberler</h2>
-    <ul class="news-feed" id="news-feed"></ul>
   </section>
 
   <script src="/static/app.js"></script>

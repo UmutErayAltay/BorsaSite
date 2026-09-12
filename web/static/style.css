@@ -99,6 +99,31 @@ body {
 .stat-card .value.sentiment-pos { color: var(--up); }
 .stat-card .value.sentiment-neg { color: var(--down); }
 
+.view-tabs {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0 2rem 1rem;
+}
+
+.view-tab {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.65rem 1.25rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.view-tab:hover,
+.view-tab.active {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
