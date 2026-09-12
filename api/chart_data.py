@@ -116,6 +116,17 @@ def _series_payload(df: pd.DataFrame, interval: str, label: str) -> dict[str, An
     }
 
 
+def fetch_live_quote(ticker: str) -> float | None:
+    """Anlık piyasa fiyatı — günlük pipeline'ın dünkü/bugünkü kapanışından farklı
+    olarak 'şimdi kontrol et' butonu için. Piyasa kapalıysa veya yfinance
+    başarısız olursa None döner, çağıran son bilinen kapanışa düşer."""
+    try:
+        price = yf.Ticker(ticker).fast_info.last_price
+        return float(price) if price else None
+    except Exception:
+        return None
+
+
 def get_chart_data(ticker: str, symbol_id: int, interval: str) -> dict[str, Any]:
     if interval not in INTERVALS:
         raise ValueError(f"Geçersiz interval: {interval}")

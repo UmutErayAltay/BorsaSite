@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.chart_data import INTERVALS, get_chart_data
+from api.chart_data import INTERVALS, fetch_live_quote, get_chart_data
 from pipeline.db import get_connection, init_schema
 from trading.config import load_trading_config
 from trading.portfolio import current_price, ensure_portfolio, get_state as get_trading_state
@@ -216,29 +217,28 @@ def symbol_chart(
     return {"ticker": ticker, "name": sym["name"], "market": sym["market"], **data}
 
 
-@app.get("/api/portfolio")
-def portfolio_summary():
-    with get_connection() as conn:
-        cfg = load_trading_config()
-        ensure_portfolio(conn, cfg.starting_balance)
-        state = get_trading_state(conn)
-        positions = []
-        positions_value = 0.0
-        for p in state.open_positions:
-            sym = conn.execute("SELECT ticker, name FROM symbols WHERE id = ?", (p.symbol_id,)).fetchone()
-            price = current_price(conn, p.symbol_id, p.entry_price)
-            market_value = price * p.quantity
-            positions_value += market_value
-            positions.append({
-                "ticker": sym["ticker"] if sym else "?",
-                "name": sym["name"] if sym else None,
-                "entry_price": p.entry_price,
-                "quantity": round(p.quantity, 6),
-                "current_price": price,
-                "market_value": round(market_value, 2),
-                "unrealized_pnl": round(market_value - p.entry_price * p.quantity, 2),
-                "opened_at": p.opened_at,
-            })
+def _portfolio_payload(conn, price_for: Callable[[int, str | None, float], float]) -> dict[str, Any]:
+    cfg = load_trading_config()
+    ensure_portfolio(conn, cfg.starting_balance)
+    state = get_trading_state(conn)
+    positions = []
+    positions_value = 0.0
+    for p in state.open_positions:
+        sym = conn.execute("SELECT ticker, name FROM symbols WHERE id = ?", (p.symbol_id,)).fetchone()
+        ticker = sym["ticker"] if sym else None
+        price = price_for(p.symbol_id, ticker, p.entry_price)
+        market_value = price * p.quantity
+        positions_value += market_value
+        positions.append({
+            "ticker": ticker or "?",
+            "name": sym["name"] if sym else None,
+            "entry_price": p.entry_price,
+            "quantity": round(p.quantity, 6),
+            "current_price": price,
+            "market_value": round(market_value, 2),
+            "unrealized_pnl": round(market_value - p.entry_price * p.quantity, 2),
+            "opened_at": p.opened_at,
+        })
     return {
         "balance": round(state.balance, 2),
         "starting_balance": state.starting_balance,
@@ -246,6 +246,27 @@ def portfolio_summary():
         "total_value": round(state.balance + positions_value, 2),
         "open_positions": positions,
     }
+
+
+@app.get("/api/portfolio")
+def portfolio_summary():
+    with get_connection() as conn:
+        return _portfolio_payload(conn, lambda sid, ticker, entry: current_price(conn, sid, entry))
+
+
+@app.get("/api/portfolio/live")
+def portfolio_live():
+    """Kullanıcının 'şimdi kontrol et' butonu için — günlük pipeline'ın son
+    kapanışı yerine yfinance'ten anlık fiyat çeker (piyasa kapalıysa veya
+    sorgu başarısız olursa son bilinen kapanışa düşer)."""
+    with get_connection() as conn:
+        def price_for(sid: int, ticker: str | None, entry: float) -> float:
+            live = fetch_live_quote(ticker) if ticker else None
+            return live if live is not None else current_price(conn, sid, entry)
+
+        payload = _portfolio_payload(conn, price_for)
+    payload["fetched_at"] = datetime.now(timezone.utc).isoformat()
+    return payload
 
 
 @app.get("/api/portfolio/history")

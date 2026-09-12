@@ -99,6 +99,34 @@ body {
 .stat-card .value.sentiment-pos { color: var(--up); }
 .stat-card .value.sentiment-neg { color: var(--down); }
 
+.live-check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
+#btn-check-live {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+#btn-check-live:hover {
+  filter: brightness(1.1);
+}
+
+#btn-check-live:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .view-tabs {
   display: flex;
   gap: 0.75rem;

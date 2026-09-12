@@ -331,8 +331,7 @@ async function loadNewsFeed() {
     .join("");
 }
 
-async function loadPortfolio() {
-  const data = await fetchJSON("/api/portfolio");
+function renderPortfolio(data) {
   const el = document.getElementById("portfolio-stats");
   const growthPct = ((data.total_value - data.starting_balance) / data.starting_balance) * 100;
   const growthClass = growthPct >= 0 ? "sentiment-pos" : "sentiment-neg";
@@ -353,8 +352,6 @@ async function loadPortfolio() {
     )
     .join("");
 
-  await loadEquityChart();
-
   const tbody = document.getElementById("positions-body");
   tbody.innerHTML =
     data.open_positions
@@ -372,6 +369,31 @@ async function loadPortfolio() {
       })
       .join("") || `<tr><td colspan="6">Açık pozisyon yok.</td></tr>`;
 }
+
+async function loadPortfolio() {
+  const data = await fetchJSON("/api/portfolio");
+  renderPortfolio(data);
+  await loadEquityChart();
+}
+
+async function checkLiveNow() {
+  const btn = document.getElementById("btn-check-live");
+  const status = document.getElementById("live-check-status");
+  btn.disabled = true;
+  status.textContent = "Kontrol ediliyor…";
+  try {
+    const data = await fetchJSON("/api/portfolio/live");
+    renderPortfolio(data);
+    const time = new Date(data.fetched_at).toLocaleTimeString("tr");
+    status.textContent = `Son kontrol: ${time}`;
+  } catch (e) {
+    status.textContent = "Kontrol başarısız, tekrar deneyin.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("btn-check-live").addEventListener("click", checkLiveNow);
 
 async function loadEquityChart() {
   const data = await fetchJSON("/api/portfolio/history");
