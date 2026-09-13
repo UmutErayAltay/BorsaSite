@@ -58,6 +58,10 @@ class SymbolPattern:
 
 
 def _normalize(text: str) -> str:
+    # casefold("İ") -> "i" + BİRLEŞEN NOKTA (U+0307) üretir, bu da "MİGROS"
+    # (KAP'ın büyük harfli başlıkları) ile "Migros"un asla eşleşmemesine
+    # yol açıyordu — Türkçe büyük harfleri önce elle normal harfe çevir.
+    text = text.replace("İ", "i").replace("I", "ı")
     text = unicodedata.normalize("NFKC", text)
     return text.casefold()
 
@@ -108,7 +112,7 @@ def _aliases_from_company_name(name: str) -> list[str]:
     ]
     if len(significant) >= 2:
         results.add(" ".join(significant[:3]))
-    if significant:
+    elif significant:
         results.add(significant[0])
 
     return [r for r in results if len(r) >= 4]
@@ -133,9 +137,14 @@ def build_symbol_index(conn: sqlite3.Connection) -> tuple[list[SymbolPattern], d
         by_base[base] = symbol_id
         patterns: set[str] = set()
 
-        patterns.add(base)
-        patterns.add(ticker)
-        patterns.add(ticker.casefold())
+        # <4 harfli ticker'lar gevşek kelime eşleşmesine girmez ("V" -> "Hemi
+        # V-8 engine" gibi alakasız metinlere bağlanıyordu) — regex yolundaki
+        # (extract_tickers_from_text) aynı len>=4 kuralıyla tutarlı; kısa
+        # ticker'lar $V / (V) / V.IS regex'leri ve manuel alias ile yakalanır.
+        if len(base) >= 4:
+            patterns.add(base)
+            patterns.add(ticker)
+            patterns.add(ticker.casefold())
 
         name = row["name"]
         if name:
@@ -229,12 +238,20 @@ def match_symbols(
 
 
 def relink_all_news(conn: sqlite3.Connection) -> dict[str, int]:
-    """Tüm haberlerin sembol bağlantılarını yeniden oluşturur."""
+    """Metin tabanlı eşleşmeleri yeniden kurar. KAP kaynaklı haberlere
+    DOKUNMAZ: onların bağlantıları kap_sync tarafından bildirimin kendi
+    `stockCodes` alanından kuruluyor (match_reason='kap:*'), bu metin
+    tahmininden çok daha kesin bir kaynak."""
     index, by_base = build_symbol_index(conn)
     blocklist = load_blocklist()
 
-    conn.execute("DELETE FROM news_symbol_links")
-    rows = conn.execute("SELECT id, title, summary FROM news_raw").fetchall()
+    conn.execute(
+        "DELETE FROM news_symbol_links WHERE news_id IN "
+        "(SELECT id FROM news_raw WHERE source != 'KAP')"
+    )
+    rows = conn.execute(
+        "SELECT id, title, summary FROM news_raw WHERE source != 'KAP'"
+    ).fetchall()
 
     stats = {"news": 0, "links": 0, "news_with_link": 0}
     for row in rows:
