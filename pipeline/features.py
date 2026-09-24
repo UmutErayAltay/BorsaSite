@@ -62,7 +62,13 @@ def add_technical_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     vol_ma = volume.rolling(20).mean()
     out["volume_ratio"] = volume / vol_ma.replace(0, np.nan)
 
-    out["target_up"] = (close.shift(-1) > close).astype(float)
+    next_close = close.shift(-1)
+    # `NaN > x` is False, not NaN — without the explicit mask the last (most
+    # recent) row of every symbol gets silently labeled target_up=0.0 ("down")
+    # even though tomorrow hasn't happened yet, and that row is both fed to
+    # training and returned as the "latest" row for live prediction.
+    out["target_up"] = (next_close > close).astype(float)
+    out.loc[next_close.isna(), "target_up"] = np.nan
     out["target_date"] = out.index.to_series().shift(-1).astype(str).str[:10]
 
     return out

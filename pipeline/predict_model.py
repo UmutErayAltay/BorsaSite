@@ -32,7 +32,7 @@ def run(latest_only: bool = True) -> dict:
     version = bundle.get("version", cfg["model"].get("version", "1.0"))
     threshold = float(cfg["prediction"].get("direction_threshold", 0.5))
 
-    df = build_dataset()
+    df = build_dataset(require_target=False)
     if df.empty:
         raise RuntimeError("Tahmin için veri yok.")
 

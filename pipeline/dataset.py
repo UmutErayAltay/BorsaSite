@@ -49,7 +49,7 @@ def _load_sentiment(conn) -> pd.DataFrame:
     return df
 
 
-def build_dataset(min_days: int | None = None) -> pd.DataFrame:
+def build_dataset(min_days: int | None = None, require_target: bool = True) -> pd.DataFrame:
     cfg = load_model_config()
     feat_cfg = cfg["features"]
     min_days = min_days or int(feat_cfg.get("min_history_days", 60))
@@ -108,6 +108,10 @@ def build_dataset(min_days: int | None = None) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.concat(frames, ignore_index=True)
-    df = df.dropna(subset=FEATURE_COLUMNS + ["target_up"])
-    df = df[df["target_up"].notna()]
+    df = df.dropna(subset=FEATURE_COLUMNS)
+    # Training needs a known label; live prediction needs only features and must
+    # keep the most recent row even though its target_up is unknown until tomorrow
+    # (see pipeline/features.py — that row now legitimately has target_up=NaN).
+    if require_target:
+        df = df[df["target_up"].notna()]
     return df
