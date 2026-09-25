@@ -55,9 +55,12 @@ def _criteria_body(from_date: str, to_date: str) -> dict[str, Any]:
     }
 
 
-def fetch_disclosures(days: int = 7) -> list[dict[str, Any]]:
-    """Son N gün tüm şirket bildirimleri."""
-    end = date.today()
+def fetch_disclosures(days: int = 7, end_date: date | None = None) -> list[dict[str, Any]]:
+    """`end_date`'den geriye N gün tüm şirket bildirimleri (varsayılan: bugüne kadar).
+    Geniş aralıklar (aylar/yıllar) API'de 500 ile patlıyor — geçmiş bir dönemi
+    doldurmak için `days`'i küçük (örn. 7) tutup `end_date`'i kaydırarak
+    parça parça çağır (bkz. sync_kap_disclosures)."""
+    end = end_date or date.today()
     start = end - timedelta(days=days)
     resp = requests.post(
         KAP_CRITERIA_URL,
@@ -113,9 +116,10 @@ def _disclosure_title(row: dict[str, Any]) -> str:
 def sync_kap_disclosures(
     days: int = 7,
     enrich_existing_urls: bool = True,
+    end_date: date | None = None,
 ) -> dict[str, int]:
     """KAP bildirimlerini news_raw'a yazar ve doğrudan hisse bağlar."""
-    rows = fetch_disclosures(days)
+    rows = fetch_disclosures(days, end_date=end_date)
     by_index = {int(r["disclosureIndex"]): r for r in rows if r.get("disclosureIndex")}
 
     stats = {
