@@ -176,16 +176,40 @@ kapanan işlemleri (brüt/net kâr, ödenen komisyon ayrı ayrı) gösterir.
 ## Historical backtest (Faz 1-3)
 
 Canlı motorun aksine, geçmiş bir tarih aralığını gerçekten yeniden oynatan
-ayrı bir motor: `backtest/`. Komisyon+BSMV+slippage+spread'i hesaba katıyor,
-Sharpe/Sortino/max drawdown/profit factor gibi metrikleri ve buy&hold
-benchmark'ını üretiyor.
+ayrı bir motor: `backtest/engine.py`. Komisyon+BSMV+slippage+spread'i hesaba
+katıyor, Sharpe/Sortino/max drawdown/profit factor gibi metrikleri ve
+buy&hold benchmark'ını üretiyor. **Bilinçli sınır:** TEK bir (mevcut,
+tüm geçmişle eğitilmiş) model kullanıyor — bu yüzden sonuçlar in-sample'dır.
 
 ```bash
 python scripts/run_backtest.py --scenario all
 ```
 
-Detay, mimari ve **bilinçli sınırlar** (in-sample model, aynı-bar execution)
-için: `docs/BACKTEST.md`. Sistem denetimi: `docs/BACKTEST_AUDIT.md`.
+Detay, mimari ve diğer bilinçli sınırlar (aynı-bar execution) için:
+`docs/BACKTEST.md`. Sistem denetimi: `docs/BACKTEST_AUDIT.md`.
+
+## Walk-forward backtest (Faz 4)
+
+Faz 1-3'ün in-sample sınırını kaldırır: gelecek verisini asla görmemiş bir
+modelin geçmişte nasıl performans gösterirdiğini ölçer. Veri
+TRAIN → VALIDATION → OOS pencerelerine bölünür, model her pencerede SADECE
+o pencerenin TRAIN kısmıyla eğitilir, kalibrasyon ve alım eşiği SADECE
+VALIDATION'da seçilir — OOS (out-of-sample) etiketleri hiçbir parametre
+seçiminde kullanılmaz. Sinyal D kapanışında üretilir, işlem D+1 açılışında
+simüle edilir (bkz. `backtest/walk_forward.py` docstring'i).
+
+```bash
+python scripts/run_walk_forward.py                    # config/backtest.yaml::default_scenario
+python scripts/run_walk_forward.py --scenario stress   # ek slippage/spread ile
+```
+
+Pencere uzunlukları: `config/backtest.yaml::walk_forward`. Maliyet senaryoları
+(`base`/`conservative`/`stress`) Faz 1-3 ile ortak (`config/backtest.yaml::
+scenarios`, `backtest/costs.py`) — komisyon/BSMV `config/trading.yaml`'dan
+aynen gelir, burada sadece backtest'e özgü slippage/spread eklenir.
+
+**Uyarı:** Geçmiş performans gelecekteki sonuçların garantisi değildir;
+tamamen simülasyondur, yatırım tavsiyesi değildir.
 
 ## Canlı dağıtım
 
@@ -213,5 +237,8 @@ taşındı, tamamen ücretsiz.
 | F2 | FinBERT / TR BERT duygu analizi ✓ |
 | F3 | XGBoost + teknik göstergeler ✓ |
 | F4 | FastAPI + web dashboard ✓ |
+| F5 | Sanal alım-satım motoru ✓ |
+| Faz 1-3 | Historical backtest (aynı-bar, tek model) ✓ |
+| Faz 4 | Walk-forward backtest (TRAIN/VALIDATION/OOS) ✓ |
 
 **Uyarı:** Tahminler bilgilendirme amaçlıdır; yatırım tavsiyesi değildir.

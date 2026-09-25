@@ -2,7 +2,7 @@
 
 model:
   name: xgboost
-  version: "1.0"
+  version: "1.1"
   path: data/models/xgb_up.pkl
 
 features:
@@ -14,6 +14,9 @@ features:
   sma_short: 20
   sma_long: 50
   sentiment_lag_days: 3
+  # D kapanışında henüz mevcut olmayabilecek günlük sentiment agregasyonunu
+  # dışarıda bırakan tutucu gecikme (bkz. pipeline/dataset.py::build_dataset).
+  sentiment_availability_lag_days: 1
 
 training:
   test_ratio: 0.2

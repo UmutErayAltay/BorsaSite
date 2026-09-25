@@ -1,4 +1,12 @@
-"""Fiyat + sentiment birleşik eğitim veri seti."""
+"""Fiyat + sentiment birleşik eğitim veri seti.
+
+Sentiment günlük agregasyondur ve `sentiment_availability_lag_days` ile D
+kapanışına kaydırılır: D gününün agregasyonu, o günün haberlerinin kapanıştan
+SONRA yayınlanmış olabileceği ihtimaliyle D-kararında henüz mevcut sayılmaz
+(bkz. config/model.yaml::features, `backtest/walk_forward.py` docstring'i).
+Tam intraday zamanlama güvenliği için ayrıca published_at/available_at
+timestamp kontrolü gerekir — bu, günlük agregasyonun tutucu bir yaklaşımıdır.
+"""
 
 from __future__ import annotations
 
@@ -50,10 +58,16 @@ def _load_sentiment(conn) -> pd.DataFrame:
 
 
 def build_dataset(min_days: int | None = None, require_target: bool = True) -> pd.DataFrame:
+    """`require_target=False`: walk-forward ve canlı tahmin gibi en sondaki
+    (henüz next-day kapanışı bilinmeyen, `target_up=NaN` olan — bkz.
+    pipeline/features.py) satırın da lazım olduğu çağrılar için o satırları
+    ATMAZ. Eğitim yolu (`pipeline/train_model.py`) varsayılanı kullanmaya
+    devam eder."""
     cfg = load_model_config()
     feat_cfg = cfg["features"]
     min_days = min_days or int(feat_cfg.get("min_history_days", 60))
     lag = int(feat_cfg.get("sentiment_lag_days", 3))
+    availability_lag = int(feat_cfg.get("sentiment_availability_lag_days", 1))
 
     frames: list[pd.DataFrame] = []
 
@@ -68,7 +82,7 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
             symbol_id = int(sym["id"])
             prices = conn.execute(
                 """
-                SELECT date, close, volume
+                SELECT date, open, high, low, close, volume
                 FROM prices_daily
                 WHERE symbol_id = ?
                 ORDER BY date
@@ -89,7 +103,16 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
 
             if not sentiment.empty:
                 s = sentiment[sentiment["symbol_id"] == symbol_id].copy()
-                s = s.set_index("date")[["avg_score", "news_count"]]
+                s = s.set_index("date")[["avg_score", "news_count"]].sort_index()
+                # `sentiment_daily`, haberi olmayan günler için hiç satır
+                # üretmez (bkz. pipeline/db.py::rebuild_sentiment_daily) —
+                # önce fiyat takviminin ÜZERİNE reindex edip sonra kaydırmak
+                # gerekiyor, aksi halde shift() haberli günler arasındaki
+                # SIRAYLA kayar, aradaki işlem günü sayısına göre değil.
+                s = s.reindex(pdf.index).fillna(0.0)
+                # D'nin günlük agregasyonu D-kararında henüz mevcut sayılmaz;
+                # tam işlem günü kadar geriye kaydır (bkz. modül docstring'i).
+                s = s.shift(availability_lag)
                 merged = pdf.join(s, how="left")
                 merged["avg_score"] = merged["avg_score"].fillna(0)
                 merged["news_count"] = merged["news_count"].fillna(0)
@@ -109,9 +132,10 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
 
     df = pd.concat(frames, ignore_index=True)
     df = df.dropna(subset=FEATURE_COLUMNS)
-    # Training needs a known label; live prediction needs only features and must
-    # keep the most recent row even though its target_up is unknown until tomorrow
-    # (see pipeline/features.py — that row now legitimately has target_up=NaN).
+    # Training needs a known label; live prediction and walk-forward need only
+    # features and must keep the most recent row even though its target_up is
+    # unknown until tomorrow (see pipeline/features.py — that row now
+    # legitimately has target_up=NaN instead of a silently-wrong 0.0).
     if require_target:
         df = df[df["target_up"].notna()]
     return df
