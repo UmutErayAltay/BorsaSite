@@ -212,15 +212,22 @@ def run_walk_forward(
         )
 
         valid_raw = model.predict_proba(valid[FEATURE_COLUMNS])[:, 1]
-        calibrator = ProbabilityCalibrator(cfg.calibration_method).fit(
-            valid_raw, valid["target_up"].astype(int).to_numpy()
-        )
-        valid_prob = calibrator.transform(valid_raw)
-        threshold_info = select_buy_threshold(
-            valid_prob,
-            valid["target_up"].astype(int).to_numpy(),
-            min_trades=cfg.min_threshold_trades,
-        )
+        try:
+            calibrator = ProbabilityCalibrator(cfg.calibration_method).fit(
+                valid_raw, valid["target_up"].astype(int).to_numpy()
+            )
+            valid_prob = calibrator.transform(valid_raw)
+            threshold_info = select_buy_threshold(
+                valid_prob,
+                valid["target_up"].astype(int).to_numpy(),
+                min_trades=cfg.min_threshold_trades,
+            )
+        except ValueError:
+            # Bu pencerenin VALIDATION'ında ne kalibrasyon fit edilebildi (tek
+            # sınıf) ne de min_threshold_trades'i sağlayan bir eşik bulundu —
+            # yetersiz TRAIN/VALIDATION/OOS verisiyle aynı kategoride: işlem
+            # yapılabilir bir sinyal yok, pencere atlanır, koşu çökmez.
+            continue
         threshold = float(threshold_info["threshold"])
 
         oos_raw = model.predict_proba(oos[FEATURE_COLUMNS])[:, 1]
