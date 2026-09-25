@@ -7,6 +7,9 @@ model:
 
 features:
   min_history_days: 60
+  # forward_return ufku, gün cinsinden: etiket close(D+h)/open(D+1) - 1
+  # (bkz. pipeline/features.py::add_technical_features).
+  horizon: 5
   rsi_period: 14
   macd_fast: 12
   macd_slow: 26
@@ -22,11 +25,18 @@ training:
   test_ratio: 0.2
   random_state: 42
   xgb:
-    n_estimators: 200
-    max_depth: 5
+    # 2026-09-25: walk-forward pencereleri 250-460 satır arası, günlük yön
+    # etiketi gürültülü — max_depth=5/n_estimators=200 (eski) reg. yok, gürültüyü
+    # ezberliyordu. eval_set zaten veriliyor (walk_forward.py), early stopping
+    # onu kullanır. Bkz. plan: ancient-tinkering-acorn.md, Faz 1.
+    n_estimators: 500
+    max_depth: 3
     learning_rate: 0.05
     subsample: 0.8
     colsample_bytree: 0.8
+    min_child_weight: 50
+    reg_lambda: 5
+    early_stopping_rounds: 30
     eval_metric: logloss
 
 prediction:

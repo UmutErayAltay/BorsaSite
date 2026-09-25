@@ -31,7 +31,7 @@ def compute_macd(
 
 
 def add_technical_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
-    """df: date index, columns close, volume."""
+    """df: date index, columns open, close, volume."""
     out = df.copy()
     close = out["close"]
     volume = out["volume"].fillna(0)
@@ -45,9 +45,11 @@ def add_technical_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         int(cfg.get("macd_slow", 26)),
         int(cfg.get("macd_signal", 9)),
     )
-    out["macd"] = macd
-    out["macd_signal"] = sig
-    out["macd_hist"] = hist
+    # Fiyata göre ölçeklenir — ham TRY biriminde havuzlanmış bir modelde 2 TL'lik
+    # ve 500 TL'lik hisseyi karşılaştırılamaz kılıyordu (bkz. plan: Faz 1).
+    out["macd"] = macd / close
+    out["macd_signal"] = sig / close
+    out["macd_hist"] = hist / close
 
     sma_s = int(cfg.get("sma_short", 20))
     sma_l = int(cfg.get("sma_long", 50))
@@ -62,13 +64,18 @@ def add_technical_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     vol_ma = volume.rolling(20).mean()
     out["volume_ratio"] = volume / vol_ma.replace(0, np.nan)
 
-    next_close = close.shift(-1)
-    # `NaN > x` is False, not NaN — without the explicit mask the last (most
-    # recent) row of every symbol gets silently labeled target_up=0.0 ("down")
-    # even though tomorrow hasn't happened yet, and that row is both fed to
-    # training and returned as the "latest" row for live prediction.
-    out["target_up"] = (next_close > close).astype(float)
-    out.loc[next_close.isna(), "target_up"] = np.nan
-    out["target_date"] = out.index.to_series().shift(-1).astype(str).str[:10]
+    # Etiket artık gerçek trade'i yansıtıyor: giriş D+1 açılışında (execution_
+    # delay_days=1'e uygun), çıkış D+h kapanışında — eskiden D+1 kapanışına göre
+    # etiketlenip D+1 açılışında alınıp 10 güne kadar tutuluyordu (uyumsuzluk,
+    # bkz. plan: Faz 1 madde 1). Mutlak yön yerine BINARY etiket dataset.py'de,
+    # tüm semboller birleştikten sonra, o günün BIST medyanına göre kurulur —
+    # burada sadece piyasa-geneli hareketten arındırılmamış ham forward return
+    # üretilir.
+    h = int(cfg.get("horizon", 5))
+    entry_price = out["open"].shift(-1)
+    exit_price = close.shift(-h)
+    out["forward_return"] = exit_price / entry_price - 1
+    target_date = out.index.to_series().shift(-h)
+    out["target_date"] = target_date.dt.strftime("%Y-%m-%d")
 
     return out

@@ -28,10 +28,12 @@ def test_windows_require_full_history():
 
 
 def test_load_walk_forward_config_reads_yaml_defaults():
+    # config/backtest.yaml (gerçek veriye — 466 farklı feature_date'e — sığması
+    # için küçültüldü, bkz. plan: ancient-tinkering-acorn.md, Faz 0).
     cfg = load_walk_forward_config()
-    assert cfg.train_days == 504
-    assert cfg.validation_days == 63
-    assert cfg.oos_days == 63
+    assert cfg.train_days == 250
+    assert cfg.validation_days == 60
+    assert cfg.oos_days == 50
     assert cfg.calibration_method == "sigmoid"
 
 

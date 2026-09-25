@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -34,7 +35,9 @@ FEATURE_COLUMNS = [
     "volume_ratio",
     "sentiment_avg_3d",
     "sentiment_news_3d",
-    "is_bist",
+    # is_bist bilerek YOK: walk-forward hep bist_only=True filtreliyor, o
+    # zaman bu sütun sabit 1.0 oluyor (bkz. plan: Faz 1 madde 5). Kolon
+    # kendisi (filtreleme için) df'te duruyor, sadece model feature'ı değil.
 ]
 
 
@@ -131,6 +134,22 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
         return pd.DataFrame()
 
     df = pd.concat(frames, ignore_index=True)
+
+    # Cross-sectional (piyasa-göreli) binary etiket: mutlak yön yerine o günün
+    # BIST medyanının ÜSTÜNDE getiri. Tüm semboller birleştikten SONRA kurulur,
+    # yoksa medyan sembol başına ayrı ayrı hesaplanır (bkz. features.py yorumu).
+    bist_med = (
+        df[df["is_bist"] == 1.0]
+        .groupby("feature_date")["forward_return"]
+        .median()
+    )
+    day_med = df["feature_date"].map(bist_med)
+    df["target_up"] = np.where(
+        df["forward_return"].isna() | day_med.isna(),
+        np.nan,
+        (df["forward_return"] > day_med).astype(float),
+    )
+
     df = df.dropna(subset=FEATURE_COLUMNS)
     # Training needs a known label; live prediction and walk-forward need only
     # features and must keep the most recent row even though its target_up is
