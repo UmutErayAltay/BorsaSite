@@ -173,6 +173,20 @@ kapanan işlemleri (brüt/net kâr, ödenen komisyon ayrı ayrı) gösterir.
 
 **Uyarı:** Tamamen simülasyondur; yatırım tavsiyesi değildir.
 
+## Historical backtest (Faz 1-3)
+
+Canlı motorun aksine, geçmiş bir tarih aralığını gerçekten yeniden oynatan
+ayrı bir motor: `backtest/`. Komisyon+BSMV+slippage+spread'i hesaba katıyor,
+Sharpe/Sortino/max drawdown/profit factor gibi metrikleri ve buy&hold
+benchmark'ını üretiyor.
+
+```bash
+python scripts/run_backtest.py --scenario all
+```
+
+Detay, mimari ve **bilinçli sınırlar** (in-sample model, aynı-bar execution)
+için: `docs/BACKTEST.md`. Sistem denetimi: `docs/BACKTEST_AUDIT.md`.
+
 ## Canlı dağıtım
 
 Dashboard ve günlük pipeline iki ayrı yerde çalışır — Render Cron Job'lar

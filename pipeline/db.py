@@ -157,6 +157,49 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON portfolio_snapshots(snapshot_date DESC);
+
+-- Faz 1: her backtest çalıştırmasının "bu sonucu hangi model/config üretti"
+-- sorusuna cevap verebilmesi için (bkz. docs/BACKTEST_AUDIT.md §19).
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id SERIAL PRIMARY KEY,
+    scenario TEXT NOT NULL,
+    model_version TEXT,
+    config_hash TEXT NOT NULL,
+    start_date DATE,
+    end_date DATE,
+    starting_balance NUMERIC(14,2) NOT NULL,
+    slippage_bps REAL NOT NULL DEFAULT 0,
+    spread_bps REAL NOT NULL DEFAULT 0,
+    metrics JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS backtest_trades (
+    id SERIAL PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES backtest_runs(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    entry_price NUMERIC(14,4) NOT NULL,
+    exit_price NUMERIC(14,4) NOT NULL,
+    quantity NUMERIC(14,4) NOT NULL,
+    gross_pnl NUMERIC(14,2) NOT NULL,
+    fees_paid NUMERIC(14,2) NOT NULL,
+    net_pnl NUMERIC(14,2) NOT NULL,
+    exit_reason TEXT NOT NULL,
+    opened_at DATE NOT NULL,
+    closed_at DATE NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_trades_run ON backtest_trades(run_id);
+
+CREATE TABLE IF NOT EXISTS backtest_equity (
+    id SERIAL PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES backtest_runs(id) ON DELETE CASCADE,
+    snapshot_date DATE NOT NULL,
+    total_value NUMERIC(14,2) NOT NULL,
+    UNIQUE(run_id, snapshot_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_equity_run ON backtest_equity(run_id, snapshot_date);
 """
 
 
@@ -408,3 +451,60 @@ def upsert_prediction(
 
 def count_predictions(conn: ConnWrapper) -> int:
     return int(conn.execute("SELECT COUNT(*) AS n FROM predictions").fetchone()["n"])
+
+
+def insert_backtest_run(
+    conn: ConnWrapper,
+    scenario: str,
+    model_version: str | None,
+    config_hash: str,
+    start_date: str | None,
+    end_date: str | None,
+    starting_balance: float,
+    slippage_bps: float,
+    spread_bps: float,
+    metrics: dict,
+) -> int:
+    import json as _json
+
+    row = conn.execute(
+        """
+        INSERT INTO backtest_runs
+            (scenario, model_version, config_hash, start_date, end_date,
+             starting_balance, slippage_bps, spread_bps, metrics)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
+        """,
+        (scenario, model_version, config_hash, start_date, end_date,
+         starting_balance, slippage_bps, spread_bps, _json.dumps(metrics)),
+    )
+    return int(row.fetchone()["id"])
+
+
+def insert_backtest_trades(conn: ConnWrapper, run_id: int, trades: list[dict]) -> None:
+    if not trades:
+        return
+    conn.executemany(
+        """
+        INSERT INTO backtest_trades
+            (run_id, symbol, entry_price, exit_price, quantity, gross_pnl,
+             fees_paid, net_pnl, exit_reason, opened_at, closed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            (run_id, t["symbol"], t["entry_price"], t["exit_price"], t["quantity"],
+             t["gross_pnl"], t["fees_paid"], t["net_pnl"], t["exit_reason"],
+             t["opened_at"], t["closed_at"])
+            for t in trades
+        ),
+    )
+
+
+def insert_backtest_equity(conn: ConnWrapper, run_id: int, equity_curve: list[tuple[str, float]]) -> None:
+    if not equity_curve:
+        return
+    conn.executemany(
+        "INSERT INTO backtest_equity (run_id, snapshot_date, total_value) VALUES (?, ?, ?) "
+        "ON CONFLICT (run_id, snapshot_date) DO UPDATE SET total_value = excluded.total_value",
+        ((run_id, d, v) for d, v in equity_curve),
+    )
