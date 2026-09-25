@@ -39,7 +39,7 @@ def _seed_prices(committed_conn, symbol_id: int, n_days: int = 72, start: date =
 def test_sentiment_is_not_visible_on_its_own_day(committed_conn):
     """Bir haber D gününün kapanışından SONRA yayınlanmış olabilir; bu yüzden
     D'nin sentiment agregasyonu D'nin kendi feature satırında görünmemeli."""
-    symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY")
+    symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY", sector="Ulaştırma")
     dates = _seed_prices(committed_conn, symbol_id)
     spike_date = dates[-2]
     _insert_sentiment_daily(committed_conn, symbol_id, [(spike_date, 0.9, 5)])
@@ -56,7 +56,7 @@ def test_sentiment_becomes_visible_after_availability_lag(committed_conn):
     """Varsayılan `sentiment_availability_lag_days: 1` ile, D'nin sentiment'i
     D+1 satırında görünür olmalı — reindex+shift bunu haberli gün sayısına
     göre değil, gerçek işlem günü sayısına göre yapmalı."""
-    symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY")
+    symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY", sector="Ulaştırma")
     dates = _seed_prices(committed_conn, symbol_id)
     spike_date = dates[-2]
     next_date = dates[-1]
@@ -73,7 +73,7 @@ def test_sentiment_becomes_visible_after_availability_lag(committed_conn):
 def test_sparse_sentiment_shifts_by_trading_days_not_by_news_rows(committed_conn):
     """İki haberli gün arasında haber olmayan günler varken, shift her iki
     kaydı da BİRBİRİNE göre değil, kendi işlem gününe göre kaydırmalı."""
-    symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY")
+    symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY", sector="Ulaştırma")
     dates = _seed_prices(committed_conn, symbol_id)
     first_news_date = dates[-10]
     second_news_date = dates[-2]  # aradaki günlerde hiç haber yok

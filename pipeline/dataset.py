@@ -35,6 +35,11 @@ FEATURE_COLUMNS = [
     "volume_ratio",
     "sentiment_avg_3d",
     "sentiment_news_3d",
+    "rank_return_5d",
+    "rank_volume_ratio",
+    "sector_relative_return_1d",
+    "bist_avg_return_1d",
+    "bist_avg_return_5d",
     # is_bist bilerek YOK: walk-forward hep bist_only=True filtreliyor, o
     # zaman bu sütun sabit 1.0 oluyor (bkz. plan: Faz 1 madde 5). Kolon
     # kendisi (filtreleme için) df'te duruyor, sadece model feature'ı değil.
@@ -78,7 +83,7 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
         init_schema(conn)
         sentiment = _load_sentiment(conn)
         symbols = conn.execute(
-            "SELECT id, ticker, market FROM symbols ORDER BY ticker"
+            "SELECT id, ticker, market, sector FROM symbols ORDER BY ticker"
         ).fetchall()
 
         for sym in symbols:
@@ -103,6 +108,7 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
             pdf["symbol_id"] = symbol_id
             pdf["ticker"] = sym["ticker"]
             pdf["is_bist"] = 1.0 if sym["market"] == "BIST" else 0.0
+            pdf["sector"] = sym["sector"]
 
             if not sentiment.empty:
                 s = sentiment[sentiment["symbol_id"] == symbol_id].copy()
@@ -134,6 +140,29 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
         return pd.DataFrame()
 
     df = pd.concat(frames, ignore_index=True)
+
+    # --- Cross-sectional (piyasa-göreli) feature'lar (Faz 2 Batch B) -----------
+    # Hepsi semboller BİRLEŞTİKTEN SONRA kurulur: her biri o günün BIST
+    # evreni içinde sıralama/görelilik gerektirir, sembol başına ayrı
+    # hesaplanırsa anlamını yitirir. Ham/mutlak feature'lar (Batch A) yürüme
+    # öncesi performansı bozduğu için burada yalnızca GÖRELİ büyüklükler var.
+    bist = df["is_bist"] == 1.0
+    # Rank: US satırları NaN kalır (walk-forward zaten bist_only ile filtreliyor).
+    for col, out_col in (("return_5d", "rank_return_5d"), ("volume_ratio", "rank_volume_ratio")):
+        df[out_col] = df[col].where(bist).groupby(df["feature_date"]).rank(pct=True)
+
+    # Sektör-relatif getiri: hissenin return_1d'si - AYNI gün aynı sektörün
+    # medyanı. Sektörü olmayan sembol NaN kalır.
+    sector_med = (
+        df[bist].groupby(["sector", "feature_date"])["return_1d"].median()
+    )
+    df["sector_relative_return_1d"] = df["return_1d"] - pd.MultiIndex.from_arrays(
+        [df["sector"], df["feature_date"]]
+    ).map(sector_med)
+
+    # Piyasa proxy'si: eşit ağırlıklı BIST ortalaması, TÜM satırlara broadcast.
+    for col, out_col in (("return_1d", "bist_avg_return_1d"), ("return_5d", "bist_avg_return_5d")):
+        df[out_col] = df["feature_date"].map(df[bist].groupby("feature_date")[col].mean())
 
     # Cross-sectional (piyasa-göreli) binary etiket: mutlak yön yerine o günün
     # BIST medyanının ÜSTÜNDE getiri. Tüm semboller birleştikten SONRA kurulur,

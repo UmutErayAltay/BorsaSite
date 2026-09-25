@@ -31,7 +31,7 @@ class _FixedProbModel:
 
 
 def _seed_bist_symbol(conn, ticker: str, days: int = 70, start_price: float = 100.0) -> int:
-    symbol_id = upsert_symbol(conn, ticker, "BIST", "TRY")
+    symbol_id = upsert_symbol(conn, ticker, "BIST", "TRY", sector="Ulaştırma")
     start = date(2026, 1, 1)
     rows = []
     price = start_price

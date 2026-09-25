@@ -55,8 +55,10 @@ def _seed_symbol_with_history(conn, ticker: str = "THYAO.IS", days: int = 70, tr
     """`trend` serinin günlük eğimi (güçlü/weak sembol ayrımı için). ZOR: zigzag
     genliği ±0.05 olduğu için `abs(trend) < 0.05` olmalı — tekdüze artan bir
     seride RSI'nin avg_loss'u hep 0 kalır, RS NaN olur ve dropna TÜM satırları
-    siler (aynı tuzak: tests/test_dataset_sentiment_timing.py::_seed_prices)."""
-    symbol_id = upsert_symbol(conn, ticker, "BIST", "TRY")
+    siler (aynı tuzak: tests/test_dataset_sentiment_timing.py::_seed_prices).
+    `sector` de ZORUNLU: sektörsüz sembollerde `sector_relative_return_1d` NaN
+    kalır ve dropna(FEATURE_COLUMNS) yine TÜM satırları siler."""
+    symbol_id = upsert_symbol(conn, ticker, "BIST", "TRY", sector="Ulaştırma")
     start = date(2026, 1, 1)
     rows = []
     price = 100.0
