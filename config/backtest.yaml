@@ -22,10 +22,13 @@ bist_only: true
 # validation'da fit edilir. Faz 1-3'ün aynı-bar/tek-model motorundan
 # (backtest/engine.py) ayrı, tamamlayıcı bir motor.
 walk_forward:
-  train_days: 504
-  validation_days: 63
-  oos_days: 63
-  step_days: 63
+  # 2026-09-25: gerçek Supabase verisinde bist_only + SMA50 warmup + target/open
+  # dropna sonrası sadece 466 farklı feature_date var (ölçüldü, orijinal
+  # 504/63/63=630 sığmıyordu). Veri arttıkça büyütülebilir.
+  train_days: 250
+  validation_days: 110
+  oos_days: 100
+  step_days: 100
   min_train_rows: 100
   calibration_method: sigmoid
   min_threshold_trades: 10
