@@ -211,6 +211,26 @@ aynen gelir, burada sadece backtest'e özgü slippage/spread eklenir.
 **Uyarı:** Geçmiş performans gelecekteki sonuçların garantisi değildir;
 tamamen simülasyondur, yatırım tavsiyesi değildir.
 
+## Gün içi haber izleme
+
+Günlük döngü (F5) sadece kapanıştan sonra çalışır — gün içinde çıkan kötü bir
+KAP bildirimi bir sonraki güne kadar hiç görülmez. Bu katman, günlük
+tahmin/alım döngüsüne YENİ ALIM eklemez (o hâlâ sadece günlük); sadece açık
+pozisyonları gün içinde birkaç kez KAP'a karşı tarar, güçlü olumsuz bir
+bildirim (Türkçe FinBERT skoru < eşik, varsayılan -0.5) gelirse pozisyonu
+erken satar — bir risk azaltma katmanı, yeni bir alım-satım stratejisi değil.
+
+```bash
+python scripts/run_intraday_watch.py                        # varsayılan eşik -0.5
+python scripts/run_intraday_watch.py --negative-threshold -0.3
+```
+
+`.github/workflows/intraday-watch.yml`, BIST açıkken hafta içi saatte bir
+otomatik çalıştırır (10:30-18:30 İstanbul). Gün içi fiyat akışı YOK — erken
+çıkış en son bilinen kapanış fiyatından yapılmış gibi işaretlenir (proje
+genelinde günlük bar dışında bir veri kaynağı yok, bkz.
+`pipeline/intraday_watch.py` docstring'i).
+
 ## Canlı dağıtım
 
 Dashboard ve günlük pipeline iki ayrı yerde çalışır — Render Cron Job'lar
@@ -227,7 +247,8 @@ taşındı, tamamen ücretsiz.
    kapanışından sonra (19:00 İstanbul = 16:00 UTC) otomatik çalışır: fiyat
    → haber → eşleştirme → sentiment → tahmin → alım-satım. Pazartesi
    günleri model de otomatik yeniden eğitilir. Actions sekmesinden "Run
-   workflow" ile elle de tetiklenebilir.
+   workflow" ile elle de tetiklenebilir. `.github/workflows/intraday-watch.yml`
+   aynı iki secret'ı kullanır, ek kurulum gerektirmez.
 
 ## Sonraki fazlar
 

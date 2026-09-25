@@ -1,0 +1,30 @@
+name: Intraday news watch
+
+on:
+  schedule:
+    # BIST açık olduğu saatlerde, hafta içi, saatte bir — 10:30-18:30 İstanbul
+    # = 07:30-15:30 UTC. Günlük pipeline'ın (19:00 İstanbul) YERİNE değil,
+    # ONUN yanında çalışır — yeni alım yapmaz, sadece açık pozisyonlarda
+    # güçlü olumsuz haber varsa erken satar (bkz. pipeline/intraday_watch.py).
+    - cron: "30 7-15 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  run-intraday-watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run intraday news watch
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/run_intraday_watch.py
