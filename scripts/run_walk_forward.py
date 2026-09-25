@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Walk-forward (Faz 4) backtest çalıştırıcı — python scripts/run_walk_forward.py [--scenario stress]"""
+"""Walk-forward (Faz 4) backtest çalıştırıcı — python scripts/run_walk_forward.py [--scenario base|conservative|stress|all]"""
 
 import argparse
 import json
@@ -17,17 +17,14 @@ from trading.config import load_trading_config  # noqa: E402
 load_project_env()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenario", default="base", choices=[*SCENARIOS.keys()])
-    args = parser.parse_args()
-
+def run_one(scenario: str) -> None:
     result = run_walk_forward(
         cfg=load_walk_forward_config(),
         trading_cfg=load_trading_config(),
-        cost_cfg=SCENARIOS[args.scenario],
+        cost_cfg=SCENARIOS[scenario],
     )
 
+    print(f"\n--- {scenario} ---")
     if not result.windows:
         print(
             "Yeterli veri yok: en az (train_days + validation_days + oos_days) "
@@ -53,6 +50,16 @@ def main() -> None:
         for t in result.trades
     ]
     print(json.dumps(trades_summary, indent=2, ensure_ascii=False))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scenario", default="base", choices=[*SCENARIOS.keys(), "all"])
+    args = parser.parse_args()
+
+    scenarios = list(SCENARIOS.keys()) if args.scenario == "all" else [args.scenario]
+    for scenario in scenarios:
+        run_one(scenario)
 
 
 if __name__ == "__main__":
