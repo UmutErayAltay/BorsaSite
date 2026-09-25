@@ -23,12 +23,14 @@ bist_only: true
 # (backtest/engine.py) ayrı, tamamlayıcı bir motor.
 walk_forward:
   # 2026-09-25: gerçek Supabase verisinde bist_only + SMA50 warmup + target/open
-  # dropna sonrası sadece 466 farklı feature_date var (ölçüldü, orijinal
-  # 504/63/63=630 sığmıyordu). Veri arttıkça büyütülebilir.
+  # dropna sonrası sadece 466 farklı feature_date var (ölçüldü). Tek pencereyle
+  # karar verilemeyeceği için (bkz. plan: ancient-tinkering-acorn.md, Faz 0)
+  # daha küçük val/oos ile 3 pencere/~150 OOS gün üretecek şekilde ayarlandı
+  # (train+val+oos+2*step = 250+60+50+100 = 460 <= 466). Veri arttıkça büyütülebilir.
   train_days: 250
-  validation_days: 110
-  oos_days: 100
-  step_days: 100
+  validation_days: 60
+  oos_days: 50
+  step_days: 50
   min_train_rows: 100
   calibration_method: sigmoid
   min_threshold_trades: 10

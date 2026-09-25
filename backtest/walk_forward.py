@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 import yaml
+from sklearn.metrics import roc_auc_score
 
 from backtest.calibration import ProbabilityCalibrator
 from backtest.costs import BacktestCostConfig
@@ -61,6 +62,31 @@ class WalkForwardResult:
     trades: list[BTClosedTrade] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
     windows: list[dict[str, Any]] = field(default_factory=list)
+    # Her pencerenin OOS tahminleri, havuzlanmış (tüm pencerelerden birleşik)
+    # AUC/IC hesabı için — bkz. scripts/run_walk_forward.py.
+    oos_predictions: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _daily_rank_ic(oos: pd.DataFrame) -> float | None:
+    """Her `feature_date` içinde prob_up ile target_up'ın Spearman
+    korelasyonu, günler arası ortalaması. Piyasa-geneli hareketi (o günün
+    TÜM hisseleri aynı yöne gitmesi) değil, modelin o gün İÇİNDE hisseleri
+    doğru SIRALAYIP sıralamadığını ölçer — AUC'nin tamamlayıcısı, tek bir
+    havuzlanmış sayının gizleyebileceği gün-içi sıralama gücünü gösterir."""
+    daily = oos.groupby("feature_date").apply(
+        lambda g: g["prob_up"].corr(g["target_up"], method="spearman")
+        if g["target_up"].nunique() > 1 and len(g) > 2
+        else float("nan"),
+        include_groups=False,
+    )
+    daily = daily.dropna()
+    return float(daily.mean()) if len(daily) else None
+
+
+def _pooled_auc(oos: pd.DataFrame) -> float | None:
+    if oos["target_up"].nunique() < 2:
+        return None
+    return float(roc_auc_score(oos["target_up"].astype(int), oos["prob_up"]))
 
 
 def make_windows(dates: list[str], cfg: WalkForwardConfig) -> list[WalkForwardWindow]:
@@ -234,6 +260,12 @@ def run_walk_forward(
         oos = oos.copy()
         oos["prob_up"] = calibrator.transform(oos_raw)
 
+        window_auc = _pooled_auc(oos)
+        window_ic = _daily_rank_ic(oos)
+        result.oos_predictions.extend(
+            oos[["feature_date", "ticker", "prob_up", "target_up"]].to_dict("records")
+        )
+
         oos_dates = sorted(oos["feature_date"].unique().tolist())
         for day in oos_dates:
             # Dünün sinyalini bugünün AÇILIŞINDA yürüt, sonra bugünün kararına geç.
@@ -250,6 +282,7 @@ def run_walk_forward(
             "oos_start": window.oos_start, "oos_end": window.oos_end,
             "train_rows": len(train), "validation_rows": len(valid), "oos_rows": len(oos),
             "threshold": threshold, "calibration": cfg.calibration_method,
+            "oos_auc": window_auc, "oos_ic": window_ic,
         })
 
     result.equity_curve = portfolio.equity_curve
