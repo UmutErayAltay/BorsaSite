@@ -157,7 +157,13 @@ def buy(
         )
 
     currently_locked = sum(p.entry_price * p.quantity for p in state.open_positions)
-    projected_pct = (currently_locked + position_value) / state.starting_balance * 100
+    # `state.starting_balance` DEĞİL, mevcut toplam varlık (nakit + açık
+    # pozisyonların maliyet bazı) — sabit bir referansa bölünürse, bakiye o
+    # referansın biraz üzerine çıktığı an (strateji kâr ettiğinde) oran
+    # kalıcı olarak sınırı aşar ve portföy bir daha ASLA yeni pozisyon
+    # açamaz (walk-forward backtest'te gerçek veriyle tespit edildi).
+    current_equity = state.balance + currently_locked
+    projected_pct = (currently_locked + position_value) / current_equity * 100
     limit_pct = cfg.max_portfolio_exposure_pct * 100
     if projected_pct > limit_pct:
         return False, (

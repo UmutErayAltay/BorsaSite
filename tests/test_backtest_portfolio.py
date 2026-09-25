@@ -83,6 +83,21 @@ def test_slippage_makes_buy_more_expensive_and_sell_cheaper():
     assert pf_slip.open_positions["A"].quantity < pf_free.open_positions["A"].quantity
 
 
+def test_buy_allowed_after_balance_grows_past_original_starting_balance():
+    """Regresyon: eski kod `%90 portföy riski` kontrolünü SABİT `starting_balance`'a
+    bölüyordu — bakiye kâr edip başlangıcın biraz üzerine çıktığında oran kalıcı
+    olarak %90'ı aşıyor ve portföy bir daha ASLA yeni pozisyon açamıyordu (gerçek
+    5 yıllık BIST verisiyle walk-forward koşusunda tespit edildi — bkz.
+    backtest/portfolio.py::buy dokstring'i). Artık mevcut toplam varlığa
+    (nakit + açık pozisyon) göre hesaplanıyor."""
+    pf = BacktestPortfolio(starting_balance=10000.0)
+    pf.balance = 18500.0  # strateji kâr etti, bakiye başlangıcın çok üzerinde
+
+    ok, reason = pf.buy("A", 100.0, 0.7, "2026-01-01", CFG, NO_COST)
+
+    assert ok is True, reason
+
+
 def test_positions_value_and_snapshot():
     pf = BacktestPortfolio(starting_balance=10000.0)
     pf.buy("A", 100.0, 0.7, "2026-01-01", CFG, NO_COST)

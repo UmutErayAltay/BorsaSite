@@ -84,6 +84,19 @@ def test_sell_computes_net_pnl_after_both_fees(conn):
     assert get_open_position(conn, symbol_id) is None
 
 
+def test_buy_allowed_after_balance_grows_past_original_starting_balance(conn):
+    """Regresyon: bkz. trading/portfolio.py::buy dokstring'i ve
+    backtest/portfolio.py'deki aynı testin dokstring'i — canlı motorda da
+    aynı bug vardı."""
+    ensure_portfolio(conn, CFG.starting_balance)
+    conn.execute("UPDATE portfolio SET balance = ? WHERE id = 1", (18500.0,))
+    symbol_id = _symbol(conn)
+
+    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    assert ok is True, reason
+
+
 def test_sell_returns_none_when_no_open_position(conn):
     ensure_portfolio(conn, CFG.starting_balance)
     symbol_id = _symbol(conn)

@@ -76,7 +76,13 @@ class BacktestPortfolio:
             )
 
         currently_locked = sum(p.entry_price * p.quantity for p in self.open_positions.values())
-        projected_pct = (currently_locked + position_value) / self.starting_balance * 100
+        # `starting_balance` DEĞİL, mevcut toplam varlık (nakit + açık pozisyonların
+        # maliyet bazı) — sabit bir referansa bölünürse, bakiye o referansın biraz
+        # üzerine çıktığı an (yani strateji kâr ettiğinde) oran kalıcı olarak sınırı
+        # aşar ve portföy bir daha ASLA yeni pozisyon açamaz (gerçek veriyle
+        # walk-forward'da tespit edildi — bkz. tests/test_backtest_portfolio.py).
+        current_equity = self.balance + currently_locked
+        projected_pct = (currently_locked + position_value) / current_equity * 100
         limit_pct = trading_cfg.max_portfolio_exposure_pct * 100
         if projected_pct > limit_pct:
             return False, (
