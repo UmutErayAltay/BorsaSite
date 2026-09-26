@@ -120,10 +120,25 @@ Mevcut: `max_open_positions`, `max_position_pct`, `max_portfolio_exposure_pct`,
 `max_hold_days`, `min_position_value_try` — hepsi `config/trading.yaml`'da,
 gerçek ve test edilmiş (`test_engine.py`, `test_portfolio.py`).
 
-Eksik: stop-loss, take-profit, cooldown-after-exit, maximum single-position
-loss, minimum expected edge after costs. (`sell` sadece `sell_threshold`
-altına düşünce ya da `max_hold_days` dolunca tetikleniyor — fiyat bazlı
-hiçbir çıkış yok.)
+**2026-09-26 güncellemesi — stop-loss/take-profit/cooldown eklendi (commit
+`1302a52`):** `config/trading.yaml::stop_loss_pct` (%7) ve `take_profit_pct`
+(%15), `run_once()`'ta `sell_threshold`/`max_hold_days`'ten ÖNCE kontrol
+ediliyor (fiyat bazlı çıkış artık var). `cooldown_days_after_exit` (3 gün):
+satılan bir sembol cooldown dolmadan yeniden alım adayı olamıyor
+(`_last_exit_date`, `trades.closed_at`'e bakıyor). Üçü de varsayılan
+kapalı (0.0/0), geriye uyumlu. Testler: `test_engine.py`'de 5 yeni senaryo
+(tetikleme, kapalıyken tetiklenmeme, cooldown red/geçiş), mutation-test ile
+doğrulandı.
+
+Hâlâ eksik: **maximum single-position loss** (stop-loss'tan bağımsız, portföy
+düzeyinde tek bir pozisyonun toplam bakiyeye oranlı zarar tavanı — şu anki
+stop-loss zaten pozisyon bazlı bir zarar tavanı olduğu için bunun ayrı bir
+mekanizma mı yoksa aynı kavramın başka bir çerçevelemesi mi olduğu Umut'un
+kararına bırakıldı), **minimum expected edge after costs** (bilinçli olarak
+YAPILMADI — model şu an sadece yön olasılığı üretiyor, beklenen getiri
+büyüklüğü tahmini yok; "beklenen kâr > maliyet" kontrolü büyüklük tahmini
+olmadan sağlıklı tanımlanamaz, bu Umut'un ürün kararı gerektiriyor, tahmine
+dayalı bir finansal kural icat edilmedi).
 
 ## 7. Modelleme problemleri
 
@@ -189,7 +204,7 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
    hatasını da burada düzelt).
 5. Faz 4: walk-forward validation.
 6. Faz 5: threshold + calibration (yalnızca train/validation ile).
-7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek).
+7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek). ✓ (2026-09-26, bkz. §6 güncellemesi — maximum single-position loss ve min-expected-edge hâlâ açık)
 8. Faz 7: feature deneyleri + model iyileştirme.
 9. Faz 8: dashboard/raporlama.
 10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması şart).
