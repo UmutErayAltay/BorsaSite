@@ -12,3 +12,7 @@ commission_pct: 0.05
 bsmv_pct_of_commission: 5.0
 min_commission_try: 5.0
 min_position_value_try: 500.0
+
+stop_loss_pct: 0.07
+take_profit_pct: 0.15
+cooldown_days_after_exit: 3

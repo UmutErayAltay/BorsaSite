@@ -26,6 +26,17 @@ def _latest_close(conn, symbol_id: int) -> float | None:
     return float(row["close"]) if row else None
 
 
+def _last_exit_date(conn, symbol_id: int) -> date | None:
+    """Sembolün en son kapandığı işlemin tarihi (cooldown için), yoksa None."""
+    row = conn.execute(
+        "SELECT MAX(closed_at) AS last_exit FROM trades WHERE symbol_id = ?",
+        (symbol_id,),
+    ).fetchone()
+    if row is None or row["last_exit"] is None:
+        return None
+    return date.fromisoformat(str(row["last_exit"]))
+
+
 def _log_decision(
     conn,
     decision_date: date,
@@ -49,17 +60,55 @@ def run_once(conn, cfg: TradingConfig, decision_date: date | None = None) -> dic
     sold_symbol_ids = set()
 
     # 1) Açık pozisyonları değerlendir: sat ya da tut
+    # Kural sırası önemlidir: stop_loss → take_profit → max_hold_days →
+    # sell_threshold. İlk uyan kural satışı tetikler, sonrakiler kontrol
+    # edilmez. Fiyat döngü başında BİR kez çekilir, tüm dallarda aynı
+    # kapanış kullanılır (karar anında tek bir fiyat sözleşmesi).
     state = pf.get_state(conn)
     for position in list(state.open_positions):
         pred = _latest_prediction(conn, position.symbol_id)
         current_prob = float(pred["prob_up"]) if pred else None
         opened = date.fromisoformat(position.opened_at)
         held_days = (decision_date - opened).days
+        current_price = _latest_close(conn, position.symbol_id)
+
+        # a) Stop-loss: entry'ye göre kayıp sınırı
+        if (
+            cfg.stop_loss_pct > 0
+            and current_price is not None
+            and current_price <= position.entry_price * (1 - cfg.stop_loss_pct)
+        ):
+            trade = pf.sell(conn, position.symbol_id, current_price, "stop_loss", decision_date, cfg)
+            if trade:
+                stats["sold"] += 1
+                sold_symbol_ids.add(position.symbol_id)
+                _log_decision(
+                    conn, decision_date, position.symbol_id, "sat",
+                    f"stop_loss: fiyat entry karşısında %{cfg.stop_loss_pct * 100:.1f} düştü",
+                    current_prob,
+                )
+            continue
+
+        # b) Take-profit: entry'ye göre kâr sınırı
+        if (
+            cfg.take_profit_pct > 0
+            and current_price is not None
+            and current_price >= position.entry_price * (1 + cfg.take_profit_pct)
+        ):
+            trade = pf.sell(conn, position.symbol_id, current_price, "take_profit", decision_date, cfg)
+            if trade:
+                stats["sold"] += 1
+                sold_symbol_ids.add(position.symbol_id)
+                _log_decision(
+                    conn, decision_date, position.symbol_id, "sat",
+                    f"take_profit: fiyat entry karşısında %{cfg.take_profit_pct * 100:.1f} yükseldi",
+                    current_prob,
+                )
+            continue
 
         if held_days >= cfg.max_hold_days:
-            price = _latest_close(conn, position.symbol_id)
-            if price is not None:
-                trade = pf.sell(conn, position.symbol_id, price, "max_hold_süresi", decision_date, cfg)
+            if current_price is not None:
+                trade = pf.sell(conn, position.symbol_id, current_price, "max_hold_süresi", decision_date, cfg)
                 if trade:
                     stats["sold"] += 1
                     sold_symbol_ids.add(position.symbol_id)
@@ -70,9 +119,8 @@ def run_once(conn, cfg: TradingConfig, decision_date: date | None = None) -> dic
             continue
 
         if current_prob is not None and current_prob < cfg.sell_threshold:
-            price = _latest_close(conn, position.symbol_id)
-            if price is not None:
-                trade = pf.sell(conn, position.symbol_id, price, "prob_düştü", decision_date, cfg)
+            if current_price is not None:
+                trade = pf.sell(conn, position.symbol_id, current_price, "prob_düştü", decision_date, cfg)
                 if trade:
                     stats["sold"] += 1
                     sold_symbol_ids.add(position.symbol_id)
@@ -107,6 +155,22 @@ def run_once(conn, cfg: TradingConfig, decision_date: date | None = None) -> dic
         prob_up = float(row["prob_up"])
         if symbol_id in open_symbol_ids or symbol_id in sold_symbol_ids:
             continue
+
+        # Cooldown: kısa süre önce satılan bir sembole hemen geri girmeyelim
+        # (stop-loss sonrası stoparlayan kayıpları ve kesik-kazanç salınımını
+        # kısar). Kural `buy`'a hiç ulaşmadan adayı eler.
+        if cfg.cooldown_days_after_exit > 0:
+            last_exit = _last_exit_date(conn, symbol_id)
+            if last_exit is not None:
+                days_since_exit = (decision_date - last_exit).days
+                if days_since_exit < cfg.cooldown_days_after_exit:
+                    remaining = cfg.cooldown_days_after_exit - days_since_exit
+                    stats["rejected"] += 1
+                    _log_decision(
+                        conn, decision_date, symbol_id, "red",
+                        f"cooldown: {remaining} gün kaldı", prob_up,
+                    )
+                    continue
 
         price = _latest_close(conn, symbol_id)
         if price is None:

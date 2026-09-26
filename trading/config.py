@@ -24,6 +24,11 @@ class TradingConfig:
     bsmv_pct_of_commission: float
     min_commission_try: float
     min_position_value_try: float
+    # Faz 6 risk yönetimi — varsayılanlar 0.0/0 (kapalı), böylece bu alanları
+    # vermeyen çağıranların (testler dahil) davranışı değişmez.
+    stop_loss_pct: float = 0.0
+    take_profit_pct: float = 0.0
+    cooldown_days_after_exit: int = 0
 
 
 def load_trading_config(path: Path | None = None) -> TradingConfig:
