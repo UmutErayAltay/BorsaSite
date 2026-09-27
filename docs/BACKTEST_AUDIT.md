@@ -201,13 +201,17 @@ motoru birebir yansıtıyor. Boşluk kalmadı. 146 test yeşil.
     ~1 yıl döndürüyor — `period="730d"` açıkça istenmeli).
   - Veri kalitesi: OHLCV'de NaN yok, günler arası/hafta sonu boşlukları
     beklenen (16 saat / 2 gün 16 saat) dışında anormal boşluk yok.
-  - **Gerçek tuzak:** her BIST sembolünde (test edilen 5 sembol, likit ve
-    az likit fark etmeden) günde TAM 1 bar `Volume=0` geliyor — günün SON
-    bar'ı (kapanış müzayedesi anlık görüntüsü, Yahoo'nun BIST'e özgü bir
-    tuhaflığı). AAPL'de (ABD) bu YOK. Bu, gerçek illikiditeyle
-    karıştırılıp özelliklere/target'a sızabilir — implementasyon bu son
-    bar'ı ATMALI (aynı `pipeline/features.py`'deki "son satır" dikkatinin
-    intraday karşılığı).
+  - **Gerçek tuzak (2026-09-27 ikinci turda DÜZELTİLDİ — ilk yazımda
+    yanlış konumlandırılmıştı):** her BIST sembolünde (5+ sembol, likit ve
+    az likit fark etmeden, 5m/15m/1h'de test edildi) günde TAM 1 bar
+    `Volume=0` VE `Open=High=Low=Close` (düz, tek fiyat) geliyor — bu
+    günün SON bar'ı DEĞİL, açılıştan hemen SONRAKİ İKİNCİ bar (15m'de
+    09:45, 5m'de 09:55, 1h'de 09:30 — yani açılış müzayedesi anlık
+    görüntüsü, gerçek sürekli işlem başlamadan önceki bir Yahoo
+    artefaktı). AAPL'de (ABD) bu YOK. Konumu SABİT DEĞİL (interval'e göre
+    değişir) — implementasyon pozisyona göre ("ilk"/"son" bar) değil,
+    **`Volume == 0` koşuluna göre** filtrelemeli, bu daha genel ve doğru
+    kural.
   - 5 sembole art arda gerçek istek atıldı, rate-limit/429 görülmedi —
     ama üretimde ~35 BIST + birkaç US sembolü × birden fazla interval
     düzenli çekilecekse throttling/backoff YİNE de eklenmeli, test
