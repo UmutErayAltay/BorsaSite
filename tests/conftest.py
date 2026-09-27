@@ -43,9 +43,21 @@ def committed_conn():
     finally:
         raw.rollback()
         cur = raw.cursor()
+        # BİLİNEN SINIRLAMA (docs/BACKTEST_AUDIT.md'de not edildi): `symbols`
+        # burada CASCADE ile truncate edildiği için Postgres bunu `symbols`'a
+        # FK'si olan HER tabloya (prices_intraday, sentiment_daily,
+        # news_symbol_links dahil) otomatik yayar — `prices_intraday`'i bu
+        # listede ADI GEÇMESE BİLE siler (deneyle doğrulandı). Gerçek/pahalı
+        # fetch edilmiş intraday veri aynı yerel Postgres'te tutuluyorsa bu
+        # veri her `committed_conn` kullanan test çalıştığında kaybolur. Kalıcı
+        # düzeltme: bu 7 test dosyasının (grep committed_conn) her birine
+        # ticker-scoped temizlik eklemek (tests/test_intraday_dataset.py'deki
+        # `intraday_conn` deseni gibi) — bilinçli olarak burada yapılmadı,
+        # mevcut testlerin varsayımlarını (RESTART IDENTITY, tam satır sayısı)
+        # denetlemeden değiştirmek riskli, ayrı bir tur gerektiriyor.
         cur.execute(
             "TRUNCATE trade_decisions, trades, positions, portfolio, "
-            "predictions, model_experiments, prices_daily, prices_intraday, symbols "
+            "predictions, model_experiments, prices_daily, symbols "
             "RESTART IDENTITY CASCADE"
         )
         raw.commit()
