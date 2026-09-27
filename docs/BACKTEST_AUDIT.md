@@ -148,12 +148,25 @@ motoru birebir yansıtıyor. Boşluk kalmadı. 146 test yeşil.
 
 ## 7. Modelleme problemleri
 
-- Tek model versiyonu, deney takibi yok (`model_experiments`/`model_metrics`
-  gibi bir tablo yok — sadece `data/models/metrics.json` her çalıştırmada
-  ÜZERİNE YAZILIYOR, geçmiş deneyler kaybolur).
-- Feature importance / SHAP raporu hiç üretilmiyor.
-- Yeni feature grubu (momentum, volatilite, trend, market context) hiç
-  denenmemiş — 12 feature README'nin ilk günden beri aynı.
+- **2026-09-27 kapandı (commit `5f8532c`):** deney takibi — `pipeline/
+  db.py::model_experiments` tablosu, her `train_model.run()` çağrısı
+  (model_version, satır sayıları, accuracy/roc_auc/mae/r2, xgb params)
+  kalıcı bir satır bırakıyor; `metrics.json` hâlâ yazılıyor (üzerine
+  yazılsa da artık geçmiş kaybolmuyor). 150 test yeşil.
+- **2026-09-27 kapandı (aynı commit):** feature importance —
+  `train_model.py`'de gerçekten eğitilmiş sınıflandırıcının
+  `feature_importances_`'ından `metrics["feature_importance"]`
+  (uydurma değil, gerçek eğitim çıktısı). SHAP raporu YAPILMADI (ayrı,
+  daha ağır bir bağımlılık/hesap gerektirir — istenirse ayrı bir iş).
+- **Hâlâ açık:** yeni feature grubu (momentum, volatilite, trend, market
+  context) hiç denenmemiş — 12 feature README'nin ilk günden beri aynı.
+  Bu, tek bir kod değişikliği DEĞİL: gerçek geçmiş veriyle backtest/
+  walk-forward karşılaştırması gerektiren bir deney döngüsü (yeni feature
+  ekle → yeniden eğit → walk-forward'da eskiyle karşılaştır → sadece
+  gerçekten ölçülebilir bir iyileşme varsa production'a al). Bu container
+  boş/test verisiyle çalışıyor, gerçek BIST geçmişi yfinance'ten çekilmesi
+  gerekir (`scripts/run_fetch_prices.py`) — sahte bir "iyileşti" iddiası
+  üretmemek için bu turda YAPILMADI, gerçek veriyle ayrı bir tur gerekir.
 - ~~Calibration hiç ölçülmemiş~~ — **bu bulgu YANLIŞ/eski çıktı (2026-09-27
   doğrulandı):** `backtest/calibration.py::ProbabilityCalibrator` zaten var
   (isotonic/sigmoid, sadece validation'da fit, OOS'ta Brier before/after
