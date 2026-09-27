@@ -370,19 +370,66 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
       DOĞRU bir mühendislik kararı olarak KORUNDU (`babee1d`) — hangi
       sayı "şanslı" çıkarsa çıksın, ticaret etmediğin sembollerle model
       eğitmenin bir gerekçesi yok.
-    - **NİHAİ SONUÇ (iki bağımsız deneyle doğrulandı):** 1 saatlik bar
-      + teknik gösterge + zaman-dilimi feature'larıyla kurulan bu
-      yaklaşım, kâr edebilir bir intraday strateji için yeterli
-      öngörücü sinyal İÇERMİYOR. BIST/ABD ayrımı denendi ve
-      İYİLEŞTİRMEDİ. Kalan olası yönler (sentiment'i gerçek timestamp'e
-      dayalı forward-fill ile eklemek, walk-forward değerlendirme,
-      hyperparameter araması) HİÇBİRİ bu turda denenmedi — ROC AUC'un
-      rastgeleye bu kadar yakın olması, sorunun MODEL AYARI değil
-      FEATURE'LARIN BİLGİ İÇERİĞİ olduğunu düşündürüyor; hyperparameter
-      aramasının bunu tek başına çözmesi olası değil. Sentiment/walk-
-      forward gerçek, çok daha büyük bir deney turu gerektiriyor —
-      önerilir ama bu turda YAPILMADI, spekülatif bir "belki iyileşir"
-      iddiası üretilmedi.
+    - ~~**NİHAİ SONUÇ:** bu yaklaşım yeterli öngörücü sinyal İÇERMİYOR~~
+      — **BU SONUÇ YANLIŞTI (2026-09-27, aynı gün düzeltildi, aşağı bkz.
+      v2).** ROC AUC'a bakıp "sinyal yok" dedim; işlem-düzeyi teşhis
+      yapmadım. Teşhis yapılınca v1'in BRÜT kârı POZİTİF çıktı — sorun
+      sinyal değil strateji/maliyet tasarımıydı.
+
+    **2026-09-27 — v2: TEŞHİS + YENİDEN TASARIM (`c9969ce`, `215cf18`):**
+
+    *Teşhis (v1 backtest'inin işlem dökümü):* brüt kâr **+4.305 TL**,
+    ücret **8.680 TL** — kaybın TAMAMI ücretten. Üç kök neden:
+    (1) **churn** — 868 işlemin 673'ü "prob düştü" ile çıkmış, 552'si
+    yalnızca 1 saat tutulmuş: model "bir sonraki saat"i tahmin ediyor,
+    strateji her saat fikir değiştirip ücret ödüyordu (hedef/strateji
+    uyumsuzluğu); (2) **bug** — günün son barında giriş = aynı fiyattan
+    anında zorla kapanış, 158 işlem brüt 0; (3) **in-sample** — backtest
+    eğitim dönemini de oynatıyordu. Ayrıca maliyet yapısı: 10.000 TL
+    hesapta %15 pozisyon = 1.500 TL, 5 TL asgari komisyon → round-trip
+    **%0.667** (taban olmasa %0.105) — tipik 1 saatlik hareketten büyük.
+
+    *Yeniden tasarım:* hedef "gün sonuna kadar getiri" (strateji zaten
+    gün sonuna kadar tutuyor); kesitsel piyasa bağlamı feature'ları
+    (aynı andaki tüm BIST'e göre ortalama/fark/sıra/genişlik) + gap,
+    önceki gün, 5 günlük getiri, volatilite; günde sembol başına tek
+    giriş, prob-flip çıkışı yok, son barda giriş yok, dolum SONRAKİ barın
+    açılışından (aynı-bar iyimserliği yok). `bars_left` bilinçli olarak
+    EKLENMEDİ (yarım günleri önceden bilirdi = sızıntı). Look-ahead testi
+    mutasyonla doğrulandı.
+
+    *Dürüstlük protokolü:* gün bazlı kronolojik train %60 / val %20 /
+    test %20; eşik (val tahminlerinin 0.998 kantili) SADECE val'de
+    seçildi; test bir kez raporlandı; backtest varsayılan olarak SADECE
+    test dönemini oynatır. **Not:** ara bir denemede pozisyon büyüklüğünü
+    test sonuçlarına bakarak seçip "+%8.6" buldum — bu test'i
+    gözetlemekti, val'de seçilince GENELLENMEDİ; o sayı geçersiz.
+
+    *Gerçek sonuç (hiç görülmemiş test, 2026-02-27→2026-09-25, 50 BIST
+    sembolü):*
+    - Regresör bilgi katsayısı (IC) val 0.063 / test 0.057 — küçük ama
+      val→test tutarlı, gerçek bir sinyal.
+    - Deney tarafında: modelin seçtiği işlemler, aynı sayıda rastgele
+      işlemin **50 tekrarının hepsini** geçti; eşik sıkılaştıkça brüt
+      kâr/işlem düzenli arttı (+%0.24 → +%0.39 → +%0.65) — tek bir
+      şanslı eşik değil.
+    - Production backtest motoru: **62 işlem, brüt +439 TL, ücret
+      620 TL, toplam %-1.81** (yıllık %-3.2), maks. düşüş **%2.0**,
+      hepsi gün sonu çıkışı. v1'in yıllık %-18.2 / %45 düşüşüne göre
+      büyük iyileşme, ama hâlâ başabaş-altı.
+    - **Duyarlılık (sonuç DEĞİL, senaryo):** aynı 62 işlem, 5 TL taban
+      olmadan (sadece %0.05 komisyon + BSMV): ücret 84 TL, **toplam
+      +%3.69**, Sharpe 1.67, maks. düşüş %1.1. Kârlılığı belirleyen şey
+      artık model değil, komisyon yapısı.
+    - **Karar: canlıya ALINMAMALI (mevcut config ile).** 62 işlem küçük
+      bir örneklem; deney tarafındaki bootstrap %90 güven aralığı sıfırın
+      iki yanında. Canlıya almadan önce: (a) Umut'un gerçek aracı
+      kurumunun asgari komisyonu doğrulanmalı (`config/trading.yaml::
+      min_commission_try: 5.0` gerçek mi?), (b) daha uzun bir OOS dönemi
+      (walk-forward) ile örneklem büyütülmeli. Pozisyon büyüklüğünü
+      artırmak maliyet yüzdesini düşürür ama bu bir RİSK POLİTİKASI
+      kararı (Faz 6'daki gibi Umut'un) — kod içinde sessizce
+      değiştirilmedi.
     - Model dosyaları (`data/models/xgb_intraday_1h*.pkl`/`.json`) bu
       container'da diskte duruyor, `.gitignore::data/` sayesinde commit
       edilmedi (doğrulandı) — kalıcı değil, container kapanınca kaybolur.
