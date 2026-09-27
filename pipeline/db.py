@@ -127,6 +127,26 @@ CREATE TABLE IF NOT EXISTS model_experiments (
 
 CREATE INDEX IF NOT EXISTS idx_model_experiments_trained_at ON model_experiments(trained_at DESC);
 
+-- Faz 9-10 (intraday mimari): gunluk `prices_daily` tek tabloda gun bazli
+-- fiyat tutarken, intraday barlar interval'e gore (5m/15m/30m/1h) AYNI
+-- tabloda ayirt edilir — yfinance'in destekledigi gercek geriye gidislere
+-- bkz. pipeline/fetch_intraday_prices.py.
+CREATE TABLE IF NOT EXISTS prices_intraday (
+    id SERIAL PRIMARY KEY,
+    symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    interval TEXT NOT NULL,
+    ts TIMESTAMPTZ NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL NOT NULL,
+    volume REAL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(symbol_id, interval, ts)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prices_intraday_symbol ON prices_intraday(symbol_id, interval, ts DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_balance NUMERIC(14,2) NOT NULL,
@@ -567,3 +587,31 @@ def list_model_experiments(conn: ConnWrapper, limit: int = 20) -> list[dict]:
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def upsert_intraday_prices(
+    conn: ConnWrapper,
+    symbol_id: int,
+    interval: str,
+    rows: Iterator[tuple],
+) -> int:
+    """rows: (ts_iso, open, high, low, close, volume)"""
+    cur = conn.executemany(
+        """
+        INSERT INTO prices_intraday (symbol_id, interval, ts, open, high, low, close, volume, fetched_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ON CONFLICT(symbol_id, interval, ts) DO UPDATE SET
+            open = excluded.open,
+            high = excluded.high,
+            low = excluded.low,
+            close = excluded.close,
+            volume = excluded.volume,
+            fetched_at = NOW()
+        """,
+        ((symbol_id, interval, *r) for r in rows),
+    )
+    return cur.rowcount
+
+
+def count_intraday_prices(conn: ConnWrapper) -> int:
+    return int(conn.execute("SELECT COUNT(*) AS n FROM prices_intraday").fetchone()["n"])

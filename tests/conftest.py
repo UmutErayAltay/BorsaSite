@@ -45,7 +45,8 @@ def committed_conn():
         cur = raw.cursor()
         cur.execute(
             "TRUNCATE trade_decisions, trades, positions, portfolio, "
-            "predictions, model_experiments, prices_daily, symbols RESTART IDENTITY CASCADE"
+            "predictions, model_experiments, prices_daily, prices_intraday, symbols "
+            "RESTART IDENTITY CASCADE"
         )
         raw.commit()
         raw.close()
