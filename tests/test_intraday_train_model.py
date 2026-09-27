@@ -67,14 +67,20 @@ def intraday_conn():
 
 def _seed_symbol_with_intraday_bars(conn, ticker: str, *, days: int, bars_per_day: int = 5) -> int:
     """tests/test_intraday_dataset.py ile aynı üretim deseni — gün sayısı
-    dışarıdan verilir ki `min_history_bars` eşiği tek değişkenle geçilebilsin."""
+    dışarıdan verilir ki `min_history_bars` eşiği tek değişkenle geçilebilsin.
+
+    Gün yönü d%3'e göre değişir (2 yükselen, 1 düşen gün): hedef gün-sonu
+    getirisi olduğu için her gün aynı yöne giden zigzag TEK SINIF üretir ve
+    sınıflandırıcı eğitilemez. Bu, gerçek BIST verisi DB'de yokken (başka bir
+    testin TRUNCATE'i sildiğinde) de iki sınıf olmasını garanti eder."""
     symbol_id = upsert_symbol(conn, ticker, "BIST", "TRY")
     rows = []
     price = 100.0
     for d in range(days):
         day = pd.Timestamp("2026-01-05", tz="Europe/Istanbul") + pd.Timedelta(days=d)
+        up, down = (0.1, -0.05) if d % 3 else (-0.1, 0.05)
         for b in range(bars_per_day):
-            price += 0.1 if b % 2 == 0 else -0.05
+            price += up if b % 2 == 0 else down
             ts = day + pd.Timedelta(hours=10 + b)
             rows.append((ts.isoformat(), price, price + 0.5, price - 0.5, price, 1000.0 + b))
     upsert_intraday_prices(conn, symbol_id, INTERVAL, iter(rows))
@@ -95,6 +101,10 @@ def redirected_model_path(tmp_path, monkeypatch):
     cfg["features"]["min_history_bars"] = 100
     cfg["training"]["xgb"]["n_estimators"] = 20
     cfg["training"]["xgb_regressor"]["n_estimators"] = 20
+    # Gerçek config'deki 0.998 kantil 80 günlük test sembollerinde neredeyse
+    # giriş üretmez; eşiğin ÜSTÜNDE kalan bir değerle test ediyoruz ki
+    # val/test ayrımı gerçekten çalışsın.
+    cfg["strategy"]["entry_quantile"] = 0.5
     for target in (
         "pipeline.intraday_train_model.load_intraday_model_config",
         "pipeline.intraday_dataset.load_intraday_model_config",
@@ -149,9 +159,91 @@ def test_run_returns_mae_r2_and_feature_importance_and_saves_magnitude_model(
     regressor = bundle["magnitude_model"]
     assert hasattr(regressor, "predict")
 
-    # Önemlilik gerçekten eğitilmiş modelden gelmeli.
-    for col, imp in zip(INTRADAY_FEATURE_COLUMNS, bundle["model"].feature_importances_):
+    # Önemlilik artık REGRESORDEN gelir — strateji kararını
+    # `pred_rod > entry_threshold` veren odur.
+    for col, imp in zip(INTRADAY_FEATURE_COLUMNS, regressor.feature_importances_):
         assert importance[col] == pytest.approx(round(float(imp), 4), abs=1e-4)
+
+
+def test_bundle_carries_v2_strategy_keys(
+    intraday_conn, redirected_model_path, experiment_watermark
+):
+    """v2 bundle'ı stratejinin ihtiyaç duyduğu üç anahtarı taşımalı:
+    `entry_threshold` (giriş eşiği), `val_start` ve `test_start`.
+
+    `val_start < test_start` KRONOLOJİK AKIŞIN KANITIDIR: eşik val'den
+    türetiliyor, backtest varsayılan olarak test'ten başlıyor; val test'ten
+    SONRA gelirse bu model in-sample sonuç üretir demektir."""
+    _seed_and_commit(intraday_conn)
+
+    run(save_metrics=False)
+    bundle = joblib.load(redirected_model_path)
+
+    assert isinstance(bundle["entry_threshold"], float)
+    val_start = pd.Timestamp(bundle["val_start"])
+    test_start = pd.Timestamp(bundle["test_start"])
+    # ISO gün damgası (gün bazlı ayrım sınırı), tam zaman damgası değil.
+    assert bundle["val_start"] == val_start.date().isoformat()
+    assert bundle["test_start"] == test_start.date().isoformat()
+    assert val_start < test_start, "val, test'ten SONRA başlıyor — kronolojik akış bozuk"
+
+
+def test_metrics_include_ic_and_val_auc(
+    intraday_conn, redirected_model_path, experiment_watermark
+):
+    """`val_ic`/`test_ic` (regresyonun bilgi katsayısı = stratejinin gerçekten
+    kullandığı sinyal) ve `val_auc` (eşiğin seçildiği dönemin sınıflandırıcı
+    kalitesi) metrics'te bulunmalı. `test_accuracy` = `accuracy` (tablo şeması
+    uyumluluğu)."""
+    _seed_and_commit(intraday_conn)
+
+    metrics = run(save_metrics=False)
+
+    assert metrics["test_rows"] > 0
+    assert metrics["val_rows"] > 0
+    assert metrics["test_accuracy"] == metrics["accuracy"]
+    for key in ("val_ic", "test_ic", "val_auc"):
+        assert key in metrics, f"metrics'te {key} yok"
+        assert metrics[key] is None or isinstance(metrics[key], float)
+    # IC her zaman tanımlı değil (sabit tahmin) ama test verisi yeterli
+    # olduğu için burada gerçek bir sayı bekleniyor.
+    assert isinstance(metrics["test_ic"], float)
+
+
+def test_day_based_split_never_splits_a_single_day():
+    """v1 barları sıraya göre ikiye bölüyordu; aynı günün barları iki parçaya
+    ayrılabiliyordu (sınır günün İKİ yarısını farklı parçalara düşürebiliyordu).
+    Gün bazlı ayrımda bir gün ya TAMAMEN train'de, ya TAMAMEN val'da, ya TAMAMEN
+    test'te olmalı.
+
+    Saf bir ayrım fonksiyonu olduğu için gerçek dataset'e gerek yok: sınır
+    durumu (her gün 5 bar, günler iç içe) elle kuruluyor."""
+    from pipeline.intraday_train_model import _day_based_split
+
+    base = pd.Timestamp("2026-01-05", tz="Europe/Istanbul")
+    df = pd.DataFrame(
+        {"ts": [base + pd.Timedelta(days=d, hours=h) for d in range(20) for h in range(5)]}
+    )
+    train_df, val_df, test_df = _day_based_split(df, val_ratio=0.2, test_ratio=0.2)
+
+    def days_of(frame) -> set:
+        return set(frame["ts"].dt.tz_convert("Europe/Istanbul").dt.date)
+
+    train_days, val_days, test_days = days_of(train_df), days_of(val_df), days_of(test_df)
+
+    assert train_days and val_days and test_days, "bir parça boş"
+    # Kesişim YOK: parçalar tamamen ayrık günlerden oluşmalı.
+    assert not (train_days & val_days)
+    assert not (train_days & test_days)
+    assert not (val_days & test_days)
+    # Parçaların birleşimi TÜM günleri ve TÜM barları kapsamalı.
+    assert train_days | val_days | test_days == days_of(df)
+    assert len(train_df) + len(val_df) + len(test_df) == len(df)
+    # Kronolojik sıra: train < val < test.
+    assert max(train_days) < min(val_days)
+    assert max(val_days) < min(test_days)
+    # 20 gün, %20 val + %20 test -> 12 train, 4 val, 4 test.
+    assert (len(train_days), len(val_days), len(test_days)) == (12, 4, 4)
 
 
 def test_magnitude_model_predicts_continuous_return_not_binary(
@@ -186,7 +278,7 @@ def test_run_records_experiment_row_with_intraday_prefix(intraday_conn, redirect
     assert row["train_rows"] == metrics["train_rows"]
     assert row["test_rows"] == metrics["test_rows"]
     assert row["symbols"] == metrics["symbols"]
-    assert row["accuracy"] == pytest.approx(metrics["accuracy"], abs=1e-4)
+    assert row["accuracy"] == pytest.approx(metrics["test_accuracy"], abs=1e-4)
     assert row["mae"] == pytest.approx(metrics["mae"], abs=1e-4)
     assert row["r2"] == pytest.approx(metrics["r2"], abs=1e-4)
 

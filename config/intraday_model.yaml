@@ -2,7 +2,7 @@
 
 model:
   name: xgboost_intraday
-  version: "1.0"
+  version: "2.0"
   path: data/models/xgb_intraday_1h.pkl
 
 interval: "1h"
@@ -17,21 +17,30 @@ features:
 
 training:
   test_ratio: 0.2
+  val_ratio: 0.2
   random_state: 42
   xgb:
-    n_estimators: 200
-    max_depth: 5
-    learning_rate: 0.05
+    n_estimators: 300
+    max_depth: 4
+    learning_rate: 0.03
+    min_child_weight: 50
     subsample: 0.8
     colsample_bytree: 0.8
     eval_metric: logloss
   xgb_regressor:
-    n_estimators: 200
-    max_depth: 5
-    learning_rate: 0.05
+    n_estimators: 300
+    max_depth: 4
+    learning_rate: 0.03
+    min_child_weight: 50
     subsample: 0.8
     colsample_bytree: 0.8
     eval_metric: rmse
+
+strategy:
+  # Giris esigi: regresorun VALIDATION tahminlerinin bu kantili. 0.998 degeri
+  # 2026-09-27'de val uzerinde (esik x pozisyon buyuklugu izgarasi) secildi,
+  # test'e bakilmadan — bkz. docs/BACKTEST_AUDIT.md §11 madde 10.
+  entry_quantile: 0.998
 
 prediction:
   direction_threshold: 0.5
