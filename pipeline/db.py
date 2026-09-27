@@ -102,6 +102,11 @@ CREATE TABLE IF NOT EXISTS predictions (
 
 CREATE INDEX IF NOT EXISTS idx_predictions_symbol ON predictions(symbol_id, feature_date DESC);
 
+-- Faz 7: beklenen getiri BÜYÜKLÜĞÜ tahmini (magnitude_model). Var olan
+-- predictions satırlarına dokunmadan, idempotent olarak eklenir (init_schema
+-- her açılışta çalışır) — canlı DB'deki mevcut satırlar korunur.
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS expected_return REAL;
+
 CREATE TABLE IF NOT EXISTS portfolio (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_balance NUMERIC(14,2) NOT NULL,
@@ -433,19 +438,21 @@ def upsert_prediction(
     prob_up: float,
     predicted_up: int,
     model_version: str,
+    expected_return: float | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO predictions
-            (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, NOW())
+            (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version, expected_return, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
         ON CONFLICT(symbol_id, feature_date, model_version) DO UPDATE SET
             target_date = excluded.target_date,
             prob_up = excluded.prob_up,
             predicted_up = excluded.predicted_up,
+            expected_return = excluded.expected_return,
             created_at = NOW()
         """,
-        (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version),
+        (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version, expected_return),
     )
 
 

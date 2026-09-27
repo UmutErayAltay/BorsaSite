@@ -10,7 +10,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score, roc_auc_score
 
 from pipeline.dataset import FEATURE_COLUMNS, build_dataset, load_model_config
 
@@ -46,8 +46,10 @@ def run(save_metrics: bool = True) -> dict:
     train_df, test_df = _temporal_split(df, float(train_cfg.get("test_ratio", 0.2)))
     X_train = train_df[FEATURE_COLUMNS]
     y_train = train_df["target_up"].astype(int)
+    y_train_ret = train_df["target_return"]  # kesintisiz, .astype(int) YOK
     X_test = test_df[FEATURE_COLUMNS]
     y_test = test_df["target_up"].astype(int)
+    y_test_ret = test_df["target_return"]
 
     xgb_params = dict(train_cfg.get("xgb", {}))
     xgb_params.setdefault("objective", "binary:logistic")
@@ -61,9 +63,22 @@ def run(save_metrics: bool = True) -> dict:
         verbose=False,
     )
 
+    # Aynı temporal split, hedef `target_return` (kesintisiz getiri büyüklüğü).
+    reg_params = dict(train_cfg.get("xgb_regressor", {}))
+    reg_params.setdefault("random_state", int(train_cfg.get("random_state", 42)))
+
+    reg_model = xgb.XGBRegressor(**reg_params)
+    reg_model.fit(
+        X_train,
+        y_train_ret,
+        eval_set=[(X_test, y_test_ret)],
+        verbose=False,
+    )
+
     joblib.dump(
         {
             "model": model,
+            "magnitude_model": reg_model,
             "features": FEATURE_COLUMNS,
             "version": model_cfg.get("version", "1.0"),
         },
@@ -73,6 +88,7 @@ def run(save_metrics: bool = True) -> dict:
 
     y_prob = model.predict_proba(X_test)[:, 1]
     y_pred = (y_prob >= float(cfg["prediction"].get("direction_threshold", 0.5))).astype(int)
+    y_pred_ret = reg_model.predict(X_test)
 
     metrics = {
         "train_rows": len(train_df),
@@ -84,6 +100,11 @@ def run(save_metrics: bool = True) -> dict:
         metrics["roc_auc"] = round(float(roc_auc_score(y_test, y_prob)), 4)
     except ValueError:
         metrics["roc_auc"] = None
+    metrics["mae"] = round(float(mean_absolute_error(y_test_ret, y_pred_ret)), 6)
+    try:
+        metrics["r2"] = round(float(r2_score(y_test_ret, y_pred_ret)), 6)
+    except ValueError:
+        metrics["r2"] = None
 
     if save_metrics:
         metrics_path = model_path.parent / "metrics.json"

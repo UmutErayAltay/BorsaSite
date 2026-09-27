@@ -136,6 +136,8 @@ def build_dataset(min_days: int | None = None, require_target: bool = True) -> p
     # features and must keep the most recent row even though its target_up is
     # unknown until tomorrow (see pipeline/features.py — that row now
     # legitimately has target_up=NaN instead of a silently-wrong 0.0).
+    # `target_return` (Faz 7) da aynı `next_close.isna()` maskesinden türüyor,
+    # yani NaN olan satırlar birebir aynı satırlar — ayrı bir filtre gerekmiyor.
     if require_target:
         df = df[df["target_up"].notna()]
     return df

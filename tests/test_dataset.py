@@ -22,6 +22,20 @@ def test_target_up_is_nan_for_last_row_not_false():
     assert np.isnan(out["target_up"].iloc[-1])
 
 
+def test_target_return_is_nan_for_last_row_not_zero():
+    """Faz 7: getiri BÜYÜKLÜĞÜ hedefi de son satırda NaN olmalı — `NaN/close-1`
+    zaten NaN verir ama maske olmadan yine de sessizce 0.0'a düşmemeli ve
+    diğer satırlar next_close/close-1 ile birebir tutmalı."""
+    close = pd.Series([10.0, 11.0, 9.0, 12.0], index=pd.date_range("2026-01-01", periods=4))
+    df = pd.DataFrame({"close": close, "volume": [100.0] * 4})
+    out = add_technical_features(df, {})
+
+    expected = close.shift(-1) / close - 1
+    np.testing.assert_allclose(out["target_return"].iloc[:-1], expected.iloc[:-1])
+    assert np.isnan(out["target_return"].iloc[-1])
+    assert out["target_return"].iloc[-1] != 0.0
+
+
 def _seed_symbol_with_history(conn, days: int = 70) -> int:
     symbol_id = upsert_symbol(conn, "THYAO.IS", "BIST", "TRY")
     start = date(2026, 1, 1)
@@ -59,3 +73,22 @@ def test_build_dataset_require_target_false_keeps_all_feature_complete_rows(comm
     df = build_dataset(require_target=False)
     rows = df[df["symbol_id"] == symbol_id]
     assert rows["target_up"].isna().sum() == 1  # only the last row, and only that one
+
+
+def test_build_dataset_target_return_filtered_by_target_up(committed_conn):
+    """`require_target=False` yolunda: hedefi bilinmeyen TEK satır, `target_return`
+    bakımından da NaN olmalı (ikisi de aynı `next_close.isna()` maskesinden)."""
+    symbol_id = _seed_symbol_with_history(committed_conn)
+    committed_conn.commit()
+
+    predict_rows = build_dataset(require_target=False)
+    predict_rows = predict_rows[predict_rows["symbol_id"] == symbol_id]
+    assert predict_rows["target_up"].isna().sum() == 1
+    assert predict_rows["target_return"].isna().sum() == 1
+    assert predict_rows.loc[predict_rows["target_up"].isna(), "target_return"].isna().all()
+
+    # Eğitim yolu: target_up filtresi target_return'ı da kapsıyor — ayrı filtre gerekmiyor.
+    train_rows = build_dataset()
+    train_rows = train_rows[train_rows["symbol_id"] == symbol_id]
+    assert not train_rows.empty
+    assert train_rows["target_return"].notna().all()

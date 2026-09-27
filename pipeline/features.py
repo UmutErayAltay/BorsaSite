@@ -69,6 +69,12 @@ def add_technical_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     # training and returned as the "latest" row for live prediction.
     out["target_up"] = (next_close > close).astype(float)
     out.loc[next_close.isna(), "target_up"] = np.nan
+    # Beklenen getiri BÜYÜKLÜĞÜ (Faz 7): yön olasılığı tek başına "ne kadar
+    # kazanılır" sorusunu yanıtlamıyor. Aynı `next_close.isna()` maskesi
+    # kullanılır — bilinmeyen son satır yönde olduğu gibi burada da NaN kalır,
+    # sessizce 0.0'a düşmez.
+    out["target_return"] = next_close / close - 1
+    out.loc[next_close.isna(), "target_return"] = np.nan
     out["target_date"] = out.index.to_series().shift(-1).astype(str).str[:10]
 
     return out
