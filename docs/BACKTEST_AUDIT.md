@@ -142,11 +142,9 @@ işlem maliyeti + `min_expected_edge_pct` güvenlik payıyla karşılaştırıyo
 (`portfolio.py::buy()`, `engine.py`'nin aday sorgusundan `COALESCE(...,
 0.0)` ile besleniyor). Varsayılan kapalı (0.0), geriye uyumlu. 23 yeni test.
 
-**Yeni bilinen boşluk:** `backtest/` bu filtreyi YANSITMIYOR —
-`trading/`'den tamamen ayrı, kendi kod kopyası (`backtest/portfolio.py`,
-`backtest/engine.py`), bilinçli olarak bu turun kapsamı dışında tutuldu.
-Bu filtre açılırsa (`min_expected_edge_pct > 0`) backtest sonuçları canlı
-davranışı yansıtmaz — ayrı bir tur gerektirir.
+**2026-09-27 kapandı (commit `7333b48`):** `backtest/portfolio.py`/
+`backtest/engine.py` artık aynı `check_expected_edge` deseniyle canlı
+motoru birebir yansıtıyor. Boşluk kalmadı. 146 test yeşil.
 
 ## 7. Modelleme problemleri
 
