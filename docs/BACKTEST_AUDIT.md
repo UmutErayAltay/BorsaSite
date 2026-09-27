@@ -245,6 +245,19 @@ filtre uyumu, `add_technical_features`'ı da dolaylı kapsıyor),
 kodunun TAMAMI değil — yeni eklenen feature grubu denemesi (§7, hâlâ açık)
 gündeme gelirse o da kendi testini isteyecek.
 
+**2026-09-27 bulunan bir test-altyapısı sınırlaması (Faz 9-10 çalışması
+sırasında keşfedildi):** `tests/conftest.py::committed_conn`'un
+`TRUNCATE symbols ... CASCADE`'i, Postgres'in TRUNCATE CASCADE semantiği
+yüzünden `symbols`'a FK'si olan HER tabloyu (o tabloyu adıyla listede
+saymasan BİLE) siler — `prices_intraday` dahil (deneyle doğrulandı).
+Aynı yerel Postgres'te gerçek/pahalı fetch edilmiş intraday veri varsa
+(bu turda 547K satır), `committed_conn` kullanan 7 test dosyasından biri
+her `pytest` koşusunda onu sessizce siler. Kalıcı düzeltme: o 7 dosyanın
+her birine `tests/test_intraday_dataset.py`'deki ticker-scoped temizlik
+desenini retrofit etmek — mevcut testlerin (RESTART IDENTITY, satır
+sayısı) varsayımlarını denetlemeden yapmak riskli olduğu için bu turda
+YAPILMADI, ayrı bir tur gerektiriyor.
+
 ## 10. Scheduler / retraining
 
 GitHub Actions hafta içi 16:00 UTC, `workflow_dispatch` ile elle de
