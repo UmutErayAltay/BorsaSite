@@ -299,16 +299,59 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
    index.html`, geniş bir `/api/*` yüzeyi (stats/symbols/predictions/
    portfolio/trades/prices/news/chart), `backtest/reports.py` JSON/CSV/
    HTML rapor üretiyor, `test_api_portfolio.py` ile test edilmiş.)
-10. Faz 9-10: intraday mimari + backtest. **Kısmen var, kısmen açık:**
-    `pipeline/intraday_watch.py` gün içi çalışıyor ama GÜNLÜK bar
-    kullanıyor (haber/KAP tetikli erken çıkış, kendi docstring'i bunu
-    bilinçli sınır olarak yazıyor) — audit'in istediği gerçek intraday
-    (5m/15m/1h) FİYAT mimarisi + onun backtest'i DEĞİL. **Veri sağlayıcı
-    doğrulaması 2026-09-27'de gerçek ağ isteğiyle yapıldı ve GEÇTİ**
-    (bkz. §8) — `yfinance` BIST için gerçek, kaliteli intraday veri
-    veriyor (1h için 730 gün geriye). Önündeki engel kalktı; kalan iş artık
-    mühendislik (DB şeması, fetch/feature/backtest katmanı) — hâlâ ayrı,
-    büyük bir tur ama artık bir araştırma sorusu değil.
+10. Faz 9-10: intraday mimari + backtest. `pipeline/intraday_watch.py`
+    hâlâ GÜNLÜK bar kullanıyor (haber/KAP tetikli erken çıkış, kendi
+    docstring'i bunu bilinçli sınır olarak yazıyor), bu Faz 9-10'un
+    ASIL istediği (5m/15m/1h) FİYAT mimarisi değildi.
+
+    **2026-09-27 — TAMAMLANDI, GERÇEK VERİYLE ÇALIŞTIRILDI, SONUÇ OLUMSUZ:**
+    Umut "gerçekten yeni bir intraday model/strateji" istedi (günlük
+    modeli daha sık çalıştırma DEĞİL). Kurulan mimari: `pipeline/
+    intraday_features.py`/`intraday_dataset.py` (hedef SADECE gün içi,
+    gece sıçraması hedeflenmez — her günün son bar'ının hedefi NaN),
+    `pipeline/intraday_train_model.py` (sınıflandırıcı+regresor,
+    `f4b7efb`'deki iki-modelli bundle deseni), `backtest/intraday_engine.py`
+    (gün-içi al/sat + gün sonu ZORUNLU kapanış — strateji gece pozisyon
+    TUTMUYOR, model gece riski hakkında hiç fikir üretmiyor). Veri
+    sağlayıcı doğrulaması (§8) geçti, 101 sembol için 547.058 gerçek 1h
+    bar (2023-10-27→2026-09-25) çekildi. 22 yeni test, hepsi gerçek yerel
+    Postgres'e karşı (`committed_conn`'un TRUNCATE CASCADE'i bu gerçek
+    veriyi sildiği içi ticker-scoped fixture'lar kullanıldı, bkz. §9).
+
+    **Gerçek eğitim + gerçek backtest sonucu (2.9 yıllık gerçek BIST
+    verisi, 101 sembol):**
+    - Sınıflandırıcı: accuracy %54.1, ROC AUC 0.547 — tura-yazı'dan
+      (0.50/0.50) BELİRGİN ŞEKİLDE İYİ DEĞİL.
+    - Regresor (beklenen getiri büyüklüğü): R² = **-0.006** — sabit
+      ortalamayı tahmin etmekten daha KÖTÜ. Gerçek bir sinyal YOK.
+    - Feature importance'ın **%76.5'i `is_bist`** (BIST mi ABD mi)
+      tarafından açıklanıyor — model gerçek teknik/zaman-dilimi sinyalini
+      DEĞİL, iki piyasanın kaba volatilite farkını öğrenmiş.
+    - Backtest (10.000 TL başlangıç, `buy_threshold=0.55`/
+      `sell_threshold=0.50`, komisyon+BSMV gerçek, 592 kapanan işlem):
+      **toplam getiri %-35.4, yıllıklandırılmış %-14.2, maksimum düşüş
+      %35.7, Sharpe -3.58, kazanma oranı %24.3, işlem başı net beklenti
+      -5.98 TL.** Brüt kâr/zarar oranı (`profit_factor`, ücretsiz) 2.29 —
+      kağıt üzerinde olumlu görünüyor ama gerçek işlem maliyeti (592
+      işlemde toplam 5.920 TL komisyon) bunu tersine çeviriyor.
+    - **Sonuç: bu v1 model CANLIYA ALINMAMALI.** Gerçek, ölçülmüş bir
+      kayıp üretiyor — "henüz iyi değil" değil, "aktif olarak zarar
+      ettiriyor" seviyesinde. Bu, iddia edilmemiş bir başarı değil,
+      dürüstçe raporlanmış bir olumsuz sonuç.
+    - **Neden böyle olabilir / bir sonraki adım (yapılmadı, kapsam
+      dışı):** `is_bist`'in ezici ağırlığı, gerçek teknik sinyalin
+      zayıf/yok olduğunu gösteriyor — tek bir train/test split (walk-
+      forward DEĞİL) overfitting riskini de ayrıca büyütüyor. Olası
+      yönler: BIST/ABD'yi ayrı ayrı modellemek, sentiment'i gerçek
+      timestamp'e dayalı forward-fill ile eklemek (v1'de bilinçli
+      olarak yok, bkz. `intraday_dataset.py`), walk-forward
+      değerlendirme (Faz 5 desenini intraday'e taşımak), hyperparameter
+      araması. Bunların HİÇBİRİ bu turda yapılmadı — gerçek bir deney
+      döngüsü gerektiriyor, tek bir kod değişikliği değil.
+    - Model dosyası (`data/models/xgb_intraday_1h.pkl`) ve metrikler
+      (`data/models/xgb_intraday_1h_metrics.json`) bu container'da
+      diskte duruyor, `.gitignore::data/` sayesinde commit edilmedi
+      (doğrulandı) — kalıcı değil, container kapanınca kaybolur.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
