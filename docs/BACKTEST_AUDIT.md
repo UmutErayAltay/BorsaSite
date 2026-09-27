@@ -460,6 +460,17 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
       kantilini her fold'un KENDİ val'inde seçmek (iç içe seçim) veya
       piyasa-geneli bileşeni ayırıp saf kesit sıralaması denemek. Mevcut
       haliyle canlıya ALINMAMALI.
+12. **Son deneme — intraday KAPATILDI (2026-09-27).** Ön kayıtlı
+    (`docs/experiments/2026-09-27-intraday-son-deneme.md`, kriterler
+    çalıştırmadan önce commit `423dc1d`): kesitsel fazla getiri hedefi +
+    giriş kantili her fold'un kendi val'inde seçildi. 343 işlem, Midas +
+    gerçekçi spread ile net %-11.2; işlem başı brüt -5.1 bps, GA
+    [-35, +30]. Model rastgeleyi 28/30 geçiyor (~8 bps sıralama bilgisi var)
+    ama rastgele girişin kendisi -13.6 bps; üç kriterden ikisi kaldı →
+    intraday hattı kapatıldı. Kod (`pipeline/intraday_*`,
+    `backtest/intraday_*`) araştırma altyapısı olarak repoda kalıyor.
+    Aynı gün `config/trading.yaml` komisyonu Umut'un aracı kurumuna (Midas,
+    0) çekildi — canlı GÜNLÜK motor da bunu kullanır.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
