@@ -471,6 +471,13 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
     `backtest/intraday_*`) araştırma altyapısı olarak repoda kalıyor.
     Aynı gün `config/trading.yaml` komisyonu Umut'un aracı kurumuna (Midas,
     0) çekildi — canlı GÜNLÜK motor da bunu kullanır.
+13. **Günlük model dürüst test — KALDI (2026-09-27).** Ön kayıtlı
+    (`docs/experiments/2026-09-27-gunluk-model-durust-test.md`). 10 yıllık
+    günlük veri, walk-forward OOS 2019-02 → 2026-08, 918 işlem: strateji
+    toplam %120 (yıllık %11) — aynı 50 hissenin eşit ağırlıklı al-tut'u
+    %2032, XU100 %1247, rastgele model medyanı %226. Üç kriter de kaldı.
+    Canlı günlük strateji hisse seçerek değer katmıyor; TL enflasyonu altında
+    çoğunlukla nakitte beklemesi reel kayıp demek.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
