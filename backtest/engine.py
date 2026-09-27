@@ -45,12 +45,14 @@ class BacktestResult:
     end_date: str | None
 
 
-def load_model(model_path: Path | None = None) -> tuple[Any, list[str]]:
+def load_model(model_path: Path | None = None) -> tuple[Any, list[str], Any | None]:
     model_path = model_path or DEFAULT_MODEL_PATH
     if not model_path.exists():
         raise FileNotFoundError(f"Model bulunamadı: {model_path}\nÖnce: python scripts/run_train.py")
     bundle = joblib.load(model_path)  # trusted, locally-trained artifact (same as pipeline/predict_model.py)
-    return bundle["model"], bundle["features"]
+    # `magnitude_model` Faz 6/7 ile eklendi; egitilmeden onceki bundle'lar yok —
+    # `.get()` ile None'a dusulur ve beklenen getiri 0 kabul edilir.
+    return bundle["model"], bundle["features"], bundle.get("magnitude_model")
 
 
 def run_backtest(
@@ -63,7 +65,7 @@ def run_backtest(
 ) -> BacktestResult:
     trading_cfg = trading_cfg or load_trading_config()
     cost_cfg = cost_cfg or BacktestCostConfig()
-    model, features = load_model(model_path)
+    model, features, magnitude_model = load_model(model_path)
 
     df = build_dataset(require_target=False)
     if df.empty:
@@ -80,6 +82,7 @@ def run_backtest(
 
     df = df.copy()
     df["prob_up"] = model.predict_proba(df[features])[:, 1]
+    df["expected_return"] = magnitude_model.predict(df[features]) if magnitude_model is not None else 0.0
 
     portfolio = BacktestPortfolio(starting_balance=trading_cfg.starting_balance)
     decisions: list[dict[str, Any]] = []
@@ -112,7 +115,10 @@ def run_backtest(
             symbol = row["ticker"]
             if symbol in portfolio.open_positions:
                 continue
-            ok, reason = portfolio.buy(symbol, float(row["close"]), float(row["prob_up"]), decision_date, trading_cfg, cost_cfg)
+            ok, reason = portfolio.buy(
+                symbol, float(row["close"]), float(row["prob_up"]), decision_date,
+                trading_cfg, cost_cfg, expected_return=float(row["expected_return"]),
+            )
             decisions.append(dict(date=decision_date, symbol=symbol, action="al" if ok else "red", reason=reason, prob_up=float(row["prob_up"])))
 
         portfolio.record_snapshot(decision_date, latest_prices)
