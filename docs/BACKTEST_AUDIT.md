@@ -334,24 +334,58 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
       -5.98 TL.** Brüt kâr/zarar oranı (`profit_factor`, ücretsiz) 2.29 —
       kağıt üzerinde olumlu görünüyor ama gerçek işlem maliyeti (592
       işlemde toplam 5.920 TL komisyon) bunu tersine çeviriyor.
-    - **Sonuç: bu v1 model CANLIYA ALINMAMALI.** Gerçek, ölçülmüş bir
-      kayıp üretiyor — "henüz iyi değil" değil, "aktif olarak zarar
-      ettiriyor" seviyesinde. Bu, iddia edilmemiş bir başarı değil,
-      dürüstçe raporlanmış bir olumsuz sonuç.
-    - **Neden böyle olabilir / bir sonraki adım (yapılmadı, kapsam
-      dışı):** `is_bist`'in ezici ağırlığı, gerçek teknik sinyalin
-      zayıf/yok olduğunu gösteriyor — tek bir train/test split (walk-
-      forward DEĞİL) overfitting riskini de ayrıca büyütüyor. Olası
-      yönler: BIST/ABD'yi ayrı ayrı modellemek, sentiment'i gerçek
-      timestamp'e dayalı forward-fill ile eklemek (v1'de bilinçli
-      olarak yok, bkz. `intraday_dataset.py`), walk-forward
-      değerlendirme (Faz 5 desenini intraday'e taşımak), hyperparameter
-      araması. Bunların HİÇBİRİ bu turda yapılmadı — gerçek bir deney
-      döngüsü gerektiriyor, tek bir kod değişikliği değil.
-    - Model dosyası (`data/models/xgb_intraday_1h.pkl`) ve metrikler
-      (`data/models/xgb_intraday_1h_metrics.json`) bu container'da
-      diskte duruyor, `.gitignore::data/` sayesinde commit edilmedi
-      (doğrulandı) — kalıcı değil, container kapanınca kaybolur.
+    - **Sonuç (ilk deney): bu v1 model CANLIYA ALINMAMALI.** Gerçek,
+      ölçülmüş bir kayıp üretiyor — "henüz iyi değil" değil, "aktif
+      olarak zarar ettiriyor" seviyesinde. Bu, iddia edilmemiş bir
+      başarı değil, dürüstçe raporlanmış bir olumsuz sonuç.
+
+    **2026-09-27 — İKİNCİ DENEY: BIST/ABD ayrımı denendi, İYİLEŞTİRMEDİ
+    (aksine kötüleşti).** `is_bist`'in ezici ağırlığı (yukarı bkz.), gerçek
+    teknik sinyalin karışık pazar etkisinin altında kaldığını
+    düşündürüyordu — ayrıca canlı `trading/engine.py` zaten SADECE BIST
+    alıyor (US sembolleri hiç ticaret edilmiyor). `pipeline/
+    intraday_dataset.py` SADECE BIST'e daraltıldı (`babee1d`), `is_bist`
+    feature'ı kaldırıldı (artık sabit/anlamsız olurdu), gerçek veriyle
+    yeniden eğitildi ve backtest edildi:
+    - Sınıflandırıcı: accuracy %58.1 — ama `y_test` ortalaması %41.5,
+      yani "her zaman düş" gibi TRİVİYAL bir taban çizgi %58.5 alır,
+      model bunun BİLE altında. ROC AUC **0.525** — karışık modelin
+      0.547'sinden DAHA KÖTÜ.
+    - Regresor R² = -0.0121 — hâlâ sabit ortalamadan kötü, hatta biraz
+      daha kötü (-0.0065'ten).
+    - Feature importance artık makul dağılmış (`bar_of_day` %14.8 en
+      yüksek, tekil bir feature'ın ezici ağırlığı yok) — ama bu, altında
+      GİZLİ KALMIŞ güçlü bir sinyal ortaya ÇIKARMADI, sadece tüm
+      feature'ların ZAYIF/eşit-derecede-bilgisiz olduğunu gösterdi.
+    - Backtest (aynı eşikler, gerçek komisyon): **toplam getiri %-43.75**
+      (BIST+ABD karışığından DAHA KÖTÜ: %-35.4), Sharpe **-3.94** (daha
+      kötü: -3.58), maksimum düşüş %45.1 (daha kötü: %35.7), 868 işlem
+      (592'den fazla — daha fazla işlem = daha fazla ücret, $8.680 vs
+      $5.920), bitiş bakiyesi 5.625 TL (6.461 TL'den daha kötü).
+    - **Yorum:** iki model de ROC AUC ~0.52-0.55 (rastgeleye çok yakın)
+      olduğu için, hangisinin "daha az kötü" göründüğü büyük ölçüde bu
+      TEK test döneminin GÜRÜLTÜSÜ olabilir, gerçek bir yetenek farkı
+      DEĞİL — walk-forward yapılmadan bu ayrım güvenle yorumlanamaz.
+      Yine de mimari değişiklik (sadece ticaret edilen evrenle eğitmek)
+      DOĞRU bir mühendislik kararı olarak KORUNDU (`babee1d`) — hangi
+      sayı "şanslı" çıkarsa çıksın, ticaret etmediğin sembollerle model
+      eğitmenin bir gerekçesi yok.
+    - **NİHAİ SONUÇ (iki bağımsız deneyle doğrulandı):** 1 saatlik bar
+      + teknik gösterge + zaman-dilimi feature'larıyla kurulan bu
+      yaklaşım, kâr edebilir bir intraday strateji için yeterli
+      öngörücü sinyal İÇERMİYOR. BIST/ABD ayrımı denendi ve
+      İYİLEŞTİRMEDİ. Kalan olası yönler (sentiment'i gerçek timestamp'e
+      dayalı forward-fill ile eklemek, walk-forward değerlendirme,
+      hyperparameter araması) HİÇBİRİ bu turda denenmedi — ROC AUC'un
+      rastgeleye bu kadar yakın olması, sorunun MODEL AYARI değil
+      FEATURE'LARIN BİLGİ İÇERİĞİ olduğunu düşündürüyor; hyperparameter
+      aramasının bunu tek başına çözmesi olası değil. Sentiment/walk-
+      forward gerçek, çok daha büyük bir deney turu gerektiriyor —
+      önerilir ama bu turda YAPILMADI, spekülatif bir "belki iyileşir"
+      iddiası üretilmedi.
+    - Model dosyaları (`data/models/xgb_intraday_1h*.pkl`/`.json`) bu
+      container'da diskte duruyor, `.gitignore::data/` sayesinde commit
+      edilmedi (doğrulandı) — kalıcı değil, container kapanınca kaybolur.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
