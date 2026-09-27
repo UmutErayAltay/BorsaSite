@@ -130,15 +130,13 @@ kapalı (0.0/0), geriye uyumlu. Testler: `test_engine.py`'de 5 yeni senaryo
 (tetikleme, kapalıyken tetiklenmeme, cooldown red/geçiş), mutation-test ile
 doğrulandı.
 
-Hâlâ eksik: **maximum single-position loss** (stop-loss'tan bağımsız, portföy
-düzeyinde tek bir pozisyonun toplam bakiyeye oranlı zarar tavanı — şu anki
-stop-loss zaten pozisyon bazlı bir zarar tavanı olduğu için bunun ayrı bir
-mekanizma mı yoksa aynı kavramın başka bir çerçevelemesi mi olduğu Umut'un
-kararına bırakıldı), **minimum expected edge after costs** (bilinçli olarak
-YAPILMADI — model şu an sadece yön olasılığı üretiyor, beklenen getiri
-büyüklüğü tahmini yok; "beklenen kâr > maliyet" kontrolü büyüklük tahmini
-olmadan sağlıklı tanımlanamaz, bu Umut'un ürün kararı gerektiriyor, tahmine
-dayalı bir finansal kural icat edilmedi).
+**2026-09-26 karar (Umut):** **maximum single-position loss** ayrı bir
+mekanizma DEĞİL — mevcut stop-loss (%7, pozisyon bazlı fiyat çıkışı) aynı
+kavramın karşılığı sayılıyor, bu madde kapandı, ek kod gerekmiyor.
+
+**minimum expected edge after costs** Faz 7'nin parçası yapılacak: model
+şu an sadece yön olasılığı üretiyor, "beklenen kâr > maliyet" kontrolü için
+önce beklenen getiri büyüklüğü tahmini eklenmesi gerekiyor — bkz. §11 Faz 7.
 
 ## 7. Modelleme problemleri
 
