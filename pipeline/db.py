@@ -107,6 +107,26 @@ CREATE INDEX IF NOT EXISTS idx_predictions_symbol ON predictions(symbol_id, feat
 -- her açılışta çalışır) — canlı DB'deki mevcut satırlar korunur.
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS expected_return REAL;
 
+-- Deney takibi: data/models/metrics.json her calismada UZERINE YAZILDIGI icin
+-- gecmis egitim deneyleri kayboluyordu (docs/BACKTEST_AUDIT.md §7). Her egitim
+-- calismasi buraya kalici bir satir birakir ve metrics.json SADECE ek bir
+-- cikti olarak yazilmaya devam eder.
+CREATE TABLE IF NOT EXISTS model_experiments (
+    id SERIAL PRIMARY KEY,
+    trained_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    model_version TEXT NOT NULL,
+    train_rows INTEGER NOT NULL,
+    test_rows INTEGER NOT NULL,
+    symbols INTEGER NOT NULL,
+    accuracy REAL,
+    roc_auc REAL,
+    mae REAL,
+    r2 REAL,
+    params JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_experiments_trained_at ON model_experiments(trained_at DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_balance NUMERIC(14,2) NOT NULL,
@@ -515,3 +535,35 @@ def insert_backtest_equity(conn: ConnWrapper, run_id: int, equity_curve: list[tu
         "ON CONFLICT (run_id, snapshot_date) DO UPDATE SET total_value = excluded.total_value",
         ((run_id, d, v) for d, v in equity_curve),
     )
+
+
+def insert_model_experiment(
+    conn: ConnWrapper,
+    model_version: str,
+    train_rows: int,
+    test_rows: int,
+    symbols: int,
+    accuracy: float | None,
+    roc_auc: float | None,
+    mae: float | None,
+    r2: float | None,
+    params: dict,
+) -> None:
+    import json as _json
+
+    conn.execute(
+        """
+        INSERT INTO model_experiments
+            (model_version, train_rows, test_rows, symbols, accuracy, roc_auc, mae, r2, params)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (model_version, train_rows, test_rows, symbols, accuracy, roc_auc, mae, r2, _json.dumps(params)),
+    )
+
+
+def list_model_experiments(conn: ConnWrapper, limit: int = 20) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM model_experiments ORDER BY trained_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]

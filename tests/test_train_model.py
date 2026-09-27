@@ -15,7 +15,7 @@ import joblib
 import pytest
 
 from pipeline.dataset import FEATURE_COLUMNS, build_dataset, load_model_config
-from pipeline.db import upsert_prices, upsert_symbol
+from pipeline.db import get_connection, list_model_experiments, upsert_prices, upsert_symbol
 from pipeline.train_model import run
 
 TICKERS = ["AAA1.IS", "BBB2.IS", "CCC3.IS", "DDD4.IS", "EEE5.IS", "FFF6.IS", "GGG7.IS", "HHH8.IS"]
@@ -98,3 +98,108 @@ def test_run_writes_metrics_json_when_requested(committed_conn, redirected_model
     written = json.loads((redirected_model_path.parent / "metrics.json").read_text(encoding="utf-8"))
     assert written["mae"] == metrics["mae"]
     assert written["r2"] == metrics["r2"]
+
+
+def _fetch_experiments() -> list[dict]:
+    """run() kendi bağlantısını açıp COMMIT ettiği için test bağlantısının
+    transaction'ı bunları görmez — ayrı bir bağlantı açıp okumak gerekir."""
+    with get_connection() as conn:
+        return list_model_experiments(conn, limit=100)
+
+
+def _truncate_experiments() -> None:
+    with get_connection() as conn:
+        conn.execute("TRUNCATE model_experiments RESTART IDENTITY CASCADE")
+
+
+def test_run_records_experiment_row_matching_metrics(committed_conn, redirected_model_path):
+    _seed_symbols(committed_conn)
+    committed_conn.commit()
+    _truncate_experiments()
+
+    metrics = run(save_metrics=False)
+
+    experiments = _fetch_experiments()
+    assert len(experiments) == 1
+    row = experiments[0]
+
+    assert row["model_version"] == str(load_model_config()["model"]["version"])
+    assert row["train_rows"] == metrics["train_rows"]
+    assert row["test_rows"] == metrics["test_rows"]
+    assert row["symbols"] == metrics["symbols"]
+    assert row["accuracy"] == pytest.approx(metrics["accuracy"], abs=1e-4)
+    assert row["mae"] == pytest.approx(metrics["mae"], abs=1e-4)
+    assert row["r2"] == pytest.approx(metrics["r2"], abs=1e-4)
+    if metrics["roc_auc"] is None:
+        assert row["roc_auc"] is None
+    else:
+        assert row["roc_auc"] == pytest.approx(metrics["roc_auc"], abs=1e-4)
+
+    params = row["params"]
+    if isinstance(params, str):  # sürücü JSONB'yi dict yerine metin olarak döndürebilir
+        import json
+
+        params = json.loads(params)
+    assert params["xgb"]["n_estimators"] == load_model_config()["training"]["xgb"]["n_estimators"]
+    assert "xgb_regressor" in params
+
+
+def test_two_runs_append_instead_of_overwriting(committed_conn, redirected_model_path):
+    """metrics.json her çalışmada üzerine yazılsa bile geçmiş deneyler
+    kaybolmamalı — deney takibinin tam noktası."""
+    _seed_symbols(committed_conn)
+    committed_conn.commit()
+    _truncate_experiments()
+
+    first = run(save_metrics=True)
+    second = run(save_metrics=True)
+
+    # metrics.json hâlâ EZİLMİŞ olmalı (mevcut davranış korunuyor).
+    import json
+
+    written = json.loads((redirected_model_path.parent / "metrics.json").read_text(encoding="utf-8"))
+    assert written["accuracy"] == second["accuracy"]
+    assert written["mae"] == second["mae"]
+    assert first["accuracy"] == second["accuracy"]  # aynı veri, aynı sonuç
+
+    # ...ama tabloda İKİ deney duruyor.
+    experiments = _fetch_experiments()
+    assert len(experiments) == 2
+    assert {e["train_rows"] for e in experiments} == {first["train_rows"]}
+    assert {e["test_rows"] for e in experiments} == {first["test_rows"]}
+    assert {e["id"] for e in experiments}.__len__() == 2
+
+
+def test_run_returns_feature_importance_matching_model(committed_conn, redirected_model_path):
+    _seed_symbols(committed_conn)
+    committed_conn.commit()
+
+    metrics = run(save_metrics=False)
+
+    importance = metrics["feature_importance"]
+    assert set(importance) == set(FEATURE_COLUMNS)
+    assert all(isinstance(v, float) and v >= 0.0 for v in importance.values())
+
+    # Değerler gerçekten eğitilmiş modelden gelmeli, sıra da importance'a göre azalan.
+    bundle = joblib.load(redirected_model_path)
+    for col, imp in zip(FEATURE_COLUMNS, bundle["model"].feature_importances_):
+        assert importance[col] == pytest.approx(round(float(imp), 4), abs=1e-4)
+
+    values = list(importance.values())
+    assert values == sorted(values, reverse=True)
+
+
+def test_list_model_experiments_returns_newest_first(committed_conn, redirected_model_path):
+    _seed_symbols(committed_conn)
+    committed_conn.commit()
+    _truncate_experiments()
+
+    run(save_metrics=False)
+    run(save_metrics=False)
+    run(save_metrics=False)
+
+    experiments = _fetch_experiments()
+    assert len(experiments) == 3
+    assert [e["id"] for e in experiments] == sorted((e["id"] for e in experiments), reverse=True)
+    trained_at = [e["trained_at"] for e in experiments]
+    assert trained_at == sorted(trained_at, reverse=True)

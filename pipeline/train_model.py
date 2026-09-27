@@ -13,6 +13,7 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score, roc_auc_score
 
 from pipeline.dataset import FEATURE_COLUMNS, build_dataset, load_model_config
+from pipeline.db import get_connection, init_schema, insert_model_experiment
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,35 @@ def run(save_metrics: bool = True) -> dict:
         metrics["r2"] = round(float(r2_score(y_test_ret, y_pred_ret)), 6)
     except ValueError:
         metrics["r2"] = None
+
+    # Özellik önemliliği: gerçekten eğitilmiş sınıflandırıcıdan gelir
+    # (xgboost varsayılan "gain" importance'ı), feature_importances_ FEATURE_COLUMNS
+    # ile aynı sırada ve uzunlukta.
+    metrics["feature_importance"] = {
+        col: round(float(imp), 4)
+        for col, imp in sorted(
+            zip(FEATURE_COLUMNS, model.feature_importances_),
+            key=lambda pair: -pair[1],
+        )
+    }
+
+    # Deney takibi: metrics.json üzerine yazılıp önceki çalışmaların sonucu
+    # ezildiği için her eğitim burada kalıcı bir satır bırakır
+    # (docs/BACKTEST_AUDIT.md §7).
+    with get_connection() as conn:
+        init_schema(conn)
+        insert_model_experiment(
+            conn,
+            model_version=str(model_cfg.get("version", "1.0")),
+            train_rows=metrics["train_rows"],
+            test_rows=metrics["test_rows"],
+            symbols=metrics["symbols"],
+            accuracy=metrics["accuracy"],
+            roc_auc=metrics.get("roc_auc"),
+            mae=metrics.get("mae"),
+            r2=metrics.get("r2"),
+            params={"xgb": xgb_params, "xgb_regressor": reg_params},
+        )
 
     if save_metrics:
         metrics_path = model_path.parent / "metrics.json"
