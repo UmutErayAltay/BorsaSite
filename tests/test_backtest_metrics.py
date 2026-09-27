@@ -113,6 +113,25 @@ def test_average_holding_days():
     assert average_holding_days([]) is None
 
 
+def test_average_holding_days_accepts_full_timestamps():
+    """backtest/intraday_engine.py düz tarih değil tam zaman damgası
+    ("2023-11-13T13:30:00+00:00") üretir - date.fromisoformat bunu ValueError
+    ile reddederdi, datetime.fromisoformat(...).date() ikisini de kabul eder."""
+    intraday_trade = dict(
+        entry_price=100.0, exit_price=110.0, quantity=10.0,
+        gross_pnl=100.0, fees_paid=5.0, net_pnl=95.0,
+        opened_at="2023-11-13T10:00:00+00:00", closed_at="2023-11-13T17:00:00+00:00",
+    )
+    assert average_holding_days([intraday_trade]) == pytest.approx(0.0)
+
+    overnight_free_but_multi_day = dict(
+        entry_price=100.0, exit_price=110.0, quantity=10.0,
+        gross_pnl=100.0, fees_paid=5.0, net_pnl=95.0,
+        opened_at="2026-01-01T10:00:00+03:00", closed_at="2026-01-03T17:00:00+03:00",
+    )
+    assert average_holding_days([overnight_free_but_multi_day]) == pytest.approx(2.0)
+
+
 def test_turnover_pct():
     curve = [("d1", 1000.0), ("d2", 1000.0)]
     result = turnover_pct([TRADE], curve)
