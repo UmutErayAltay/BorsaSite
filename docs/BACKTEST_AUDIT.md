@@ -134,9 +134,19 @@ doğrulandı.
 mekanizma DEĞİL — mevcut stop-loss (%7, pozisyon bazlı fiyat çıkışı) aynı
 kavramın karşılığı sayılıyor, bu madde kapandı, ek kod gerekmiyor.
 
-**minimum expected edge after costs** Faz 7'nin parçası yapılacak: model
-şu an sadece yön olasılığı üretiyor, "beklenen kâr > maliyet" kontrolü için
-önce beklenen getiri büyüklüğü tahmini eklenmesi gerekiyor — bkz. §11 Faz 7.
+**2026-09-27 çözüldü — minimum expected edge after costs (commit `f4b7efb` +
+`6d54172`):** önce `pipeline/train_model.py`'ye `target_return` hedefiyle bir
+XGBRegressor (`magnitude_model`) eklendi, `predictions.expected_return`'a
+yazılıyor; sonra `trading/costs.py::check_expected_edge` bunu round-trip
+işlem maliyeti + `min_expected_edge_pct` güvenlik payıyla karşılaştırıyor
+(`portfolio.py::buy()`, `engine.py`'nin aday sorgusundan `COALESCE(...,
+0.0)` ile besleniyor). Varsayılan kapalı (0.0), geriye uyumlu. 23 yeni test.
+
+**Yeni bilinen boşluk:** `backtest/` bu filtreyi YANSITMIYOR —
+`trading/`'den tamamen ayrı, kendi kod kopyası (`backtest/portfolio.py`,
+`backtest/engine.py`), bilinçli olarak bu turun kapsamı dışında tutuldu.
+Bu filtre açılırsa (`min_expected_edge_pct > 0`) backtest sonuçları canlı
+davranışı yansıtmaz — ayrı bir tur gerektirir.
 
 ## 7. Modelleme problemleri
 
@@ -202,8 +212,10 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
    hatasını da burada düzelt).
 5. Faz 4: walk-forward validation.
 6. Faz 5: threshold + calibration (yalnızca train/validation ile).
-7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek). ✓ (2026-09-26, bkz. §6 güncellemesi — maximum single-position loss ve min-expected-edge hâlâ açık)
-8. Faz 7: feature deneyleri + model iyileştirme.
+7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek). ✓ (2026-09-26/27, bkz. §6 güncellemesi — ikisi de kapandı: max single-position loss = stop-loss, min-expected-edge Faz 7'nin bir parçası olarak çözüldü)
+8. Faz 7: feature deneyleri + model iyileştirme. Beklenen getiri büyüklüğü
+   tahmini (magnitude_model) kısmı ✓ (2026-09-27, bkz. §6); feature
+   deneyleri/deney takibi/calibration ölçümü hâlâ açık.
 9. Faz 8: dashboard/raporlama.
 10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması şart).
 
