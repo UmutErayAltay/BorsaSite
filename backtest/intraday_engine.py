@@ -46,18 +46,16 @@ def run_intraday_backtest(
     trading_cfg: TradingConfig | None = None,
     cost_cfg: BacktestCostConfig | None = None,
     model_path: Path | None = None,
-    bist_only: bool = True,
 ) -> BacktestResult:
+    """`bist_only` parametresi KALDIRILDI (2026-09-27): `build_intraday_dataset`
+    artık zaten sadece BIST döndürüyor (canlı `trading/engine.py`'nin alım
+    sorgusuyla aynı evren — US sembolleri hiç ticaret edilmiyor), ayrıca
+    filtrelemeye gerek yok."""
     trading_cfg = trading_cfg or load_trading_config()
     cost_cfg = cost_cfg or BacktestCostConfig()
     model, magnitude_model, features = load_intraday_model(model_path)
 
     df = build_intraday_dataset(require_target=False)
-    if df.empty:
-        return BacktestResult([], [], [], None, None)
-
-    if bist_only:
-        df = df[df["is_bist"] == 1.0]
     if df.empty:
         return BacktestResult([], [], [], None, None)
     df = df.copy()

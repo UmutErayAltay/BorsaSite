@@ -9,6 +9,16 @@ published_at/available_at timestamp'ine dayanan ayrı bir birleştirme
 katmanıdır; bu, kendi dalgalı ve daha büyük bir iş. `INTRADAY_FEATURE_COLUMNS`
 buna yer açıyor (sentiment kolonu şimdilik yok).
 
+**2026-09-27 — SADECE BIST (mimari düzeltme, gerçek backtest sonrası):**
+`trading/engine.py`'nin canlı alım sorgusu zaten SADECE `market = 'BIST'`
+sembollerini alıyor (US sembolleri hiç ticaret edilmiyor, sadece izleniyor)
+— ama bu modül önceden BIST+US karışık eğitiyordu ve `is_bist` feature
+importance'ın %76.5'ini yiyordu (gerçek sinyalin üstünü örtüyordu, bkz.
+docs/BACKTEST_AUDIT.md §11 madde 10). BIST-only yeniden eğitim ROC AUC'u
+İYİLEŞTİRMEDİ (0.547 → 0.525, gerçekte biraz kötüleşti) — yani karışım
+tek sorun değildi, ama artık en azından ticaret edilmeyen sembollerle
+eğitim yapılmıyor ve `is_bist` gibi sabit/anlamsız bir feature yok.
+
 Hedef tanımı ve gün-sınırı disiplini için bkz. `pipeline/intraday_features.py`
 modül docstring'i.
 """
@@ -37,7 +47,6 @@ INTRADAY_FEATURE_COLUMNS = [
     "return_5",
     "volume_ratio",
     "bar_of_day",
-    "is_bist",
 ]
 
 
@@ -69,7 +78,7 @@ def build_intraday_dataset(
     with get_connection() as conn:
         init_schema(conn)
         symbols = conn.execute(
-            "SELECT id, ticker, market FROM symbols ORDER BY ticker"
+            "SELECT id, ticker, market FROM symbols WHERE market = 'BIST' ORDER BY ticker"
         ).fetchall()
 
         for sym in symbols:
@@ -95,7 +104,6 @@ def build_intraday_dataset(
 
             pdf["symbol_id"] = symbol_id
             pdf["ticker"] = sym["ticker"]
-            pdf["is_bist"] = 1.0 if sym["market"] == "BIST" else 0.0
 
             merged = pdf.reset_index()
             # Intraday'de tarih değil zaman damgası anlamlı: aynı güne ait iki

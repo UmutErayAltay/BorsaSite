@@ -80,7 +80,9 @@ def test_dataset_returns_all_feature_columns(intraday_conn):
     for col in INTRADAY_FEATURE_COLUMNS:
         assert col in df.columns
         assert rows[col].notna().all(), f"{col} NaN içeriyor"
-    assert rows["is_bist"].eq(1.0).all()
+    # 2026-09-27: `is_bist` kaldırıldı — dataset artık zaten sadece BIST
+    # döndürüyor (bkz. pipeline/intraday_dataset.py modül docstring'i).
+    assert "is_bist" not in df.columns
     assert rows["ticker"].eq("TEST1.IS").all()
     # `feature_date` değil `feature_ts`: aynı günün birden fazla bar'ı aynı
     # zaman damgasını taşımaz.

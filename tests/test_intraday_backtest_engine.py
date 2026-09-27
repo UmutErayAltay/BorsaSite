@@ -186,7 +186,7 @@ def test_positions_never_survive_overnight(scoped_dataset, tmp_path):
     model_path = _dump_model(tmp_path, prob=0.9, expected_return=0.02)
 
     result = run_intraday_backtest(
-        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path, bist_only=False,
+        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path,
     )
 
     buys = [d for d in result.decisions if d["action"] == "al"]
@@ -225,7 +225,7 @@ def test_no_position_is_carried_into_the_next_day(scoped_dataset, tmp_path):
     model_path = _dump_model(tmp_path, prob=0.9, expected_return=0.02)
 
     result = run_intraday_backtest(
-        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path, bist_only=False,
+        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path,
     )
 
     days = _observable_days(rows)
@@ -256,7 +256,7 @@ def test_legacy_bundle_without_magnitude_model_does_not_crash(scoped_dataset, tm
     assert "magnitude_model" not in joblib.load(model_path)
 
     result = run_intraday_backtest(
-        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path, bist_only=False,
+        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path,
     )
 
     buys = [d for d in result.decisions if d["action"] == "al"]
@@ -277,7 +277,7 @@ def test_min_expected_edge_blocks_candidate_via_existing_buy_path(scoped_dataset
     model_path = _dump_model(tmp_path, prob=0.9, expected_return=0.005)
 
     result = run_intraday_backtest(
-        trading_cfg=edge_cfg, cost_cfg=BacktestCostConfig(), model_path=model_path, bist_only=False,
+        trading_cfg=edge_cfg, cost_cfg=BacktestCostConfig(), model_path=model_path,
     )
 
     rejected = [d for d in result.decisions if d["action"] == "red"]
@@ -292,7 +292,7 @@ def test_low_prob_never_buys(scoped_dataset, tmp_path):
     model_path = _dump_model(tmp_path, prob=0.1, expected_return=0.02)
 
     result = run_intraday_backtest(
-        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path, bist_only=False,
+        trading_cfg=CFG, cost_cfg=BacktestCostConfig(), model_path=model_path,
     )
 
     assert not result.trades
