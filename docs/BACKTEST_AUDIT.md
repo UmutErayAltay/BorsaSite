@@ -433,6 +433,33 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
     - Model dosyaları (`data/models/xgb_intraday_1h*.pkl`/`.json`) bu
       container'da diskte duruyor, `.gitignore::data/` sayesinde commit
       edilmedi (doğrulandı) — kalıcı değil, container kapanınca kaybolur.
+11. **Komisyon araştırması + uzun walk-forward testi (2026-09-27).**
+    - Gerçek maliyet: Midas/Enpara BIST'te 0 komisyon; bankalar işlem başı
+      binde 1.9-5 + BSMV %5, asgari ~0.65-1 TL (Garanti, Osmanlı). Config'teki
+      `min_commission_try: 5.0`'ı destekleyen kaynak bulunamadı (config
+      değiştirilmedi, karar Umut'un). Spread: BIST fiyat adımı tablosuna göre
+      50 sembolde 1 tick = medyan 6-7 bps, p90 10 bps → senaryolar: gerçekçi
+      slip 5 + spread 10 bps, muhafazakâr 10/20.
+    - `backtest/intraday_walk_forward.py`: genişleyen pencere, 250 gün ilk
+      train, 60 val, 60 test; eşik her fold'da kendi val'inden; 7 fold,
+      2025-02-10 → 2026-09-25 (~410 işlem günü, önceki tek bölmenin ~3 katı),
+      tek sürekli portföy. Parametreler önceden sabitlendi, test'e bakarak
+      hiçbir şey seçilmedi.
+    - **Sonuç: ticari sinyal YOK.** 147 işlem, maliyetsiz brüt -103 TL
+      (işlem başı -7.8 bps, kazanma %40). Bootstrap %95 GA [-51, +39] bps,
+      gün-blok [-69, +44]. Rastgele taban (30 koşu, aynı giriş oranı) medyan
+      -8.2 bps — modeli 30'un 14'ü geçti, yani model rastgeleden ayırt
+      edilemiyor. Yıla göre: 2025 -62 bps (65 işlem), 2026 +35 bps (82) —
+      §10'daki pozitif tek-bölme sonucu bu 2026 dönemine denk geliyordu,
+      döneme özgüydü. Maliyet ekleyince her senaryo negatif: sıfır komisyon
+      + gerçekçi spread -%4.4, banka -%11.1, mevcut config -%18.7.
+    - Teşhis (işlem düzeyi, Kurallar gereği): kayıp maliyetten DEĞİL, brüt
+      zaten ~0. Test IC her fold'da pozitif (0.031-0.085) — yani ortalama
+      sıralama bilgisi var ama en uç %0.2 tahmin (giriş kuyruğu) bunu
+      getiriye çevirmiyor. Olası sonraki adım (henüz yapılmadı): giriş
+      kantilini her fold'un KENDİ val'inde seçmek (iç içe seçim) veya
+      piyasa-geneli bileşeni ayırıp saf kesit sıralaması denemek. Mevcut
+      haliyle canlıya ALINMAMALI.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
