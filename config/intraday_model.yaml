@@ -1,0 +1,37 @@
+# Faz 9-10 - intraday (1h) tahmin modeli, günlük modelden TAMAMEN ayri
+
+model:
+  name: xgboost_intraday
+  version: "1.0"
+  path: data/models/xgb_intraday_1h.pkl
+
+interval: "1h"
+
+features:
+  min_history_bars: 200
+  rsi_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  sma_short: 20
+
+training:
+  test_ratio: 0.2
+  random_state: 42
+  xgb:
+    n_estimators: 200
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    eval_metric: logloss
+  xgb_regressor:
+    n_estimators: 200
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    eval_metric: rmse
+
+prediction:
+  direction_threshold: 0.5
