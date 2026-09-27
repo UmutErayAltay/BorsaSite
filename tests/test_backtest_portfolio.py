@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from backtest.costs import BacktestCostConfig
 from backtest.portfolio import BacktestPortfolio
 from trading.config import TradingConfig
@@ -106,3 +108,32 @@ def test_positions_value_and_snapshot():
     assert pf.equity_curve[-1][0] == "2026-01-01"
     expected_total = pf.balance + 120.0 * pf.open_positions["A"].quantity
     assert pf.equity_curve[-1][1] == round(expected_total, 2)
+
+
+def test_buy_rejected_when_expected_return_below_cost_plus_margin():
+    """Backtest, canlı motorla AYNI edge filtresini uygular: `min_expected_edge_pct`
+    açıkken düşük beklenen getirili aday REDDEDİLİR ve sebep edge'den bahseder.
+    Pozisyon 5000 TL, round-trip ücret ≈ 5.24 TL, %1 pay 50 TL → gereken ≈ 55.24 TL."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    pf = BacktestPortfolio(starting_balance=10000.0)
+
+    # %0.5 → 25 TL beklenen kâr < ~55.24 TL gereken
+    ok, reason = pf.buy("A", 100.0, 0.7, "2026-01-01", edge_cfg, NO_COST, expected_return=0.005)
+
+    assert ok is False
+    assert "beklenen kâr" in reason
+    assert "round-trip ücret" in reason
+    assert "A" not in pf.open_positions
+    assert pf.balance == 10000.0  # reddedilen alım iz bırakmamalı
+
+
+def test_buy_succeeds_when_expected_return_clears_cost_plus_margin():
+    """Aynı edge cfg'si altında beklenen getiri yeterliyse alım BAŞARILI olmalı."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    pf = BacktestPortfolio(starting_balance=10000.0)
+
+    # %2 → 100 TL beklenen kâr > ~55.24 TL gereken
+    ok, reason = pf.buy("A", 100.0, 0.7, "2026-01-01", edge_cfg, NO_COST, expected_return=0.02)
+
+    assert ok is True, reason
+    assert "A" in pf.open_positions

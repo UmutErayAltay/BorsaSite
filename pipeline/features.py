@@ -77,5 +77,11 @@ def add_technical_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     out["forward_return"] = exit_price / entry_price - 1
     target_date = out.index.to_series().shift(-h)
     out["target_date"] = target_date.dt.strftime("%Y-%m-%d")
+    # Beklenen getiri BÜYÜKLÜĞÜ (Faz 7): yön olasılığı tek başına "ne kadar
+    # kazanılır" sorusunu yanıtlamıyor. `forward_return` ile BİREBİR AYNI trade'i
+    # (D+1 açılış giriş, D+h kapanış çıkış) hedefliyor — ayrı bir next-day
+    # hesaplaması YOK, eskiden vardı ve Faz 1'in düzelttiği target/trade
+    # uyumsuzluğunu burada tekrar üretiyordu.
+    out["target_return"] = out["forward_return"]
 
     return out

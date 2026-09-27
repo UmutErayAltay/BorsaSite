@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 from backtest.costs import BacktestCostConfig, execution_price
 from trading.config import TradingConfig
-from trading.costs import calculate_fee, check_position_size
+from trading.costs import calculate_fee, check_expected_edge, check_position_size
 
 
 @dataclass
@@ -56,6 +56,7 @@ class BacktestPortfolio:
         decision_date: str,
         trading_cfg: TradingConfig,
         cost_cfg: BacktestCostConfig,
+        expected_return: float = 0.0,
     ) -> tuple[bool, str]:
         if symbol in self.open_positions:
             return False, "Zaten açık pozisyon var"
@@ -69,6 +70,12 @@ class BacktestPortfolio:
 
         price = execution_price(mid_price, "buy", cost_cfg)
         fee = calculate_fee(position_value, trading_cfg)
+        edge_check = check_expected_edge(
+            expected_return, position_value, fee.total_fee * 2, trading_cfg
+        )
+        if not edge_check.allowed:
+            return False, edge_check.reason
+
         total_cost = position_value + fee.total_fee
         if total_cost > self.balance:
             return False, (

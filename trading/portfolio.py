@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from trading.config import TradingConfig
-from trading.costs import calculate_fee, check_position_size
+from trading.costs import calculate_fee, check_expected_edge, check_position_size
 
 
 @dataclass(frozen=True)
@@ -137,6 +137,7 @@ def buy(
     prob_up: float,
     decision_date: date,
     cfg: TradingConfig,
+    expected_return: float = 0.0,
 ) -> tuple[bool, str]:
     state = get_state(conn)
 
@@ -149,6 +150,16 @@ def buy(
         return False, size_check.reason
 
     fee = calculate_fee(position_value, cfg)
+    # `fee.total_fee` tek bacak (alış). Round-trip = alış + satış: iki bacak da
+    # aynı pozisyon büyüklüğü üzerinden aynı ücret formülüyle hesaplanıyor;
+    # satış anındaki gerçek ücret farklı olabilir ama karar anındaki en iyi
+    # tahmin bu. Aynı `fee` nesnesi paylaşılır, `calculate_fee` tekrar çağrılmaz.
+    edge_check = check_expected_edge(
+        expected_return, position_value, fee.total_fee * 2, cfg
+    )
+    if not edge_check.allowed:
+        return False, edge_check.reason
+
     total_cost = position_value + fee.total_fee
     if total_cost > state.balance:
         return False, (

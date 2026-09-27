@@ -4,6 +4,7 @@ engine's job is the day-by-day decision/cost/equity loop, not the model), and
 checks the resulting trade lifecycle and equity curve against hand computation."""
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -28,6 +29,18 @@ class _FixedProbModel:
     def predict_proba(self, X):
         n = len(X)
         return np.column_stack([np.full(n, 1 - self.prob), np.full(n, self.prob)])
+
+
+class _FixedReturnModel:
+    """`pipeline/predict_model.py`'deki `magnitude_model` yerine geçen sabit
+    getiri (oran) tahmin eden stand-in: her satır için aynı beklenen getiriyi
+    döndürür."""
+
+    def __init__(self, expected_return: float):
+        self.expected_return = expected_return
+
+    def predict(self, X):
+        return np.full(len(X), self.expected_return)
 
 
 def _seed_bist_symbol(conn, ticker: str, days: int = 70, start_price: float = 100.0) -> int:
@@ -63,6 +76,21 @@ CFG = TradingConfig(
 def _dump_model(tmp_path: Path, prob: float) -> Path:
     model_path = tmp_path / "model.pkl"
     joblib.dump({"model": _FixedProbModel(prob), "features": FEATURE_COLUMNS}, model_path)
+    return model_path
+
+
+def _dump_model_with_magnitude(tmp_path: Path, prob: float, expected_return: float) -> Path:
+    """Faz 6/7 sonrası bundle: `magnitude_model` anahtarı da içerir."""
+    model_path = tmp_path / "model_magnitude.pkl"
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {
+            "model": _FixedProbModel(prob),
+            "features": FEATURE_COLUMNS,
+            "magnitude_model": _FixedReturnModel(expected_return),
+        },
+        model_path,
+    )
     return model_path
 
 
@@ -124,3 +152,56 @@ def test_slippage_reduces_net_pnl_versus_zero_cost(committed_conn, tmp_path):
     cheap_net = sum(t.net_pnl for t in cheap.trades)
     expensive_net = sum(t.net_pnl for t in expensive.trades)
     assert expensive_net < cheap_net
+
+
+# --- Beklenen edge filtresi (canlı `trading/portfolio.py::buy` ile aynı davranış) ---
+
+
+def test_magnitude_model_feeds_expected_return_into_buy_decisions(committed_conn, tmp_path):
+    """Bundle `magnitude_model` içeriyorsa motor `expected_return`'u hesaplayıp
+    `buy()`'a geçirir. Aynı `prob_up` ile yalnızca beklenen getiri değiştiğinde
+    karar değişiyorsa, değerin modelden geldiği ve doğru hesaplandığı kanıtlanır
+    (pozisyon 5000 TL, round-trip ücret 2 x 2.63 = 5.26 TL, %1 pay 50 TL →
+    gereken ≈ 55.26 TL; %2 → 100 TL geçer, %0.5 → 25 TL geçmez)."""
+    _seed_bist_symbol(committed_conn, "KCHIS.IS")
+    committed_conn.commit()
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+
+    good = run_backtest(
+        trading_cfg=edge_cfg, cost_cfg=BacktestCostConfig(),
+        model_path=_dump_model_with_magnitude(tmp_path / "good", prob=0.9, expected_return=0.02),
+    )
+    bad = run_backtest(
+        trading_cfg=edge_cfg, cost_cfg=BacktestCostConfig(),
+        model_path=_dump_model_with_magnitude(tmp_path / "bad", prob=0.9, expected_return=0.005),
+    )
+
+    good_buys = [d for d in good.decisions if d["action"] == "al"]
+    assert good_buys, "%2 beklenen getiri, %1 pay + round-trip ücreti aşmalıydı"
+    assert good.trades
+    assert not any(d["action"] == "al" for d in bad.decisions)
+    assert all(
+        "round-trip ücret" in d["reason"]
+        for d in bad.decisions
+        if d["action"] == "red"
+    )
+
+
+def test_low_expected_return_blocks_candidate_when_edge_enabled(committed_conn, tmp_path):
+    """`min_expected_edge_pct` açıkken `magnitude_model`'in ürettiği düşük
+    beklenen getiri adayı backtest'te ALINMAMALI — karar 'red' + edge sebebi
+    olarak loglanmalı (canlı motorla aynı)."""
+    _seed_bist_symbol(committed_conn, "TUPRS.IS")
+    committed_conn.commit()
+    # %0.5 beklenen getiri, %1 güvenlik payını + round-trip ücretini karşılamaz
+    model_path = _dump_model_with_magnitude(tmp_path, prob=0.9, expected_return=0.005)
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+
+    result = run_backtest(trading_cfg=edge_cfg, cost_cfg=BacktestCostConfig(), model_path=model_path)
+
+    rejected = [d for d in result.decisions if d["action"] == "red"]
+    assert rejected, "düşük beklenen getiri reddedilmeliydi"
+    assert all("beklenen kâr" in d["reason"] for d in rejected)
+    assert not any(d["action"] == "al" for d in result.decisions)
+    assert not result.trades
+    assert all(value == edge_cfg.starting_balance for _, value in result.equity_curve)

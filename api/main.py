@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from api import benchmark
 from api.chart_data import INTERVALS, fetch_live_quote, get_chart_data
 from pipeline.db import get_connection, init_schema
 from trading.config import load_trading_config
@@ -285,6 +287,33 @@ def portfolio_history(days: int = Query(365, ge=1, le=3650)):
         )
     rows.reverse()
     return {"items": rows, "count": len(rows)}
+
+
+@app.get("/api/portfolio/benchmark")
+def portfolio_benchmark(days: int = Query(365, ge=1, le=3650)):
+    """Portföy eğrisini BIST 100'e göre normalize eder — "biz mi kazandık,
+    piyasa mı" sorusunu tek bakışta yanıtlar. Endeks verisi alınamazsa
+    portföy tarafı yine döner, benchmark alanları None kalır."""
+    with get_connection() as conn:
+        rows = _rows(
+            conn.execute(
+                """
+                SELECT snapshot_date, balance, positions_value, total_value
+                FROM portfolio_snapshots
+                ORDER BY snapshot_date DESC
+                LIMIT ?
+                """,
+                (days,),
+            )
+        )
+    rows.reverse()
+    if not rows:
+        return benchmark.build_benchmark_payload([], pd.Series(dtype=float))
+    index_closes = benchmark.fetch_index_closes(
+        rows[0]["snapshot_date"] - timedelta(days=7),
+        rows[-1]["snapshot_date"] + timedelta(days=1),
+    )
+    return benchmark.build_benchmark_payload(rows, index_closes)
 
 
 @app.get("/api/trades")

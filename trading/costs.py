@@ -48,3 +48,34 @@ def check_position_size(position_value: float, cfg: TradingConfig) -> PositionSi
             ),
         )
     return PositionSizeCheck(allowed=True, reason="Pozisyon büyüklüğü yeterli")
+
+
+@dataclass(frozen=True)
+class ExpectedEdgeCheck:
+    allowed: bool
+    reason: str
+
+
+def check_expected_edge(
+    expected_return_pct: float,
+    position_value: float,
+    round_trip_fee: float,
+    cfg: TradingConfig,
+) -> ExpectedEdgeCheck:
+    """Faz 6/7 (docs/BACKTEST_AUDIT.md §6): beklenen brut kar, round-trip
+    (alim+satim) ucretini + min_expected_edge_pct guvenlik payini asmali.
+    cfg.min_expected_edge_pct <= 0 ise (varsayilan) bu kontrol TAMAMEN
+    KAPALI — hicbir aday reddedilmez, mevcut davranis degismez."""
+    if cfg.min_expected_edge_pct <= 0:
+        return ExpectedEdgeCheck(allowed=True, reason="edge kontrolü kapalı")
+    expected_profit = expected_return_pct * position_value
+    required = round_trip_fee + cfg.min_expected_edge_pct * position_value
+    if expected_profit < required:
+        return ExpectedEdgeCheck(
+            allowed=False,
+            reason=(
+                f"beklenen kâr {expected_profit:.2f} TL < maliyet+pay "
+                f"{required:.2f} TL (round-trip ücret {round_trip_fee:.2f} TL)"
+            ),
+        )
+    return ExpectedEdgeCheck(allowed=True, reason="beklenen edge yeterli")

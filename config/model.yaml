@@ -38,6 +38,16 @@ training:
     reg_lambda: 5
     early_stopping_rounds: 30
     eval_metric: logloss
+  # Yön (sınıflandırma) modelinin yanında beklenen getiri BÜYÜKLÜĞÜ için
+  # regresör — hedefi `target_return` (kesintisiz). `objective` bilerek
+  # yazılmıyor: XGBRegressor varsayılanı reg:squarederror.
+  xgb_regressor:
+    n_estimators: 200
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    eval_metric: rmse
 
 prediction:
   direction_threshold: 0.5

@@ -9,7 +9,7 @@ import math
 import statistics
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import datetime
 
 EquityPoint = tuple[str, float]
 
@@ -190,14 +190,16 @@ def expectancy(trades: Sequence[Trade | dict]) -> float | None:
 
 
 def average_holding_days(trades: Sequence[Trade | dict]) -> float | None:
-    """Giriş-çıkış gün farklarının ortalaması (ISO tarih string'leri
-    `date.fromisoformat` ile parse edilir)."""
+    """Giriş-çıkış gün farklarının ortalaması. `opened_at`/`closed_at` günlük
+    motorda düz tarih ("2026-01-05"), intraday motorda tam zaman damgası
+    ("2023-11-13T13:30:00+00:00") — `datetime.fromisoformat(...).date()`
+    ikisini de tek biçimde ele alır (bkz. backtest/intraday_engine.py)."""
     if not trades:
         return None
     days = []
     for t in trades:
-        opened = date.fromisoformat(_trade_field(t, "opened_at"))
-        closed = date.fromisoformat(_trade_field(t, "closed_at"))
+        opened = datetime.fromisoformat(_trade_field(t, "opened_at")).date()
+        closed = datetime.fromisoformat(_trade_field(t, "closed_at")).date()
         days.append((closed - opened).days)
     return statistics.fmean(days)
 

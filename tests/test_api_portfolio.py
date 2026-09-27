@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import date
 
 from fastapi.testclient import TestClient
@@ -29,7 +30,9 @@ def test_portfolio_endpoint_reflects_open_position(committed_conn):
 
 
 def test_trades_endpoint_reports_totals_after_a_closed_trade(committed_conn):
-    cfg = load_trading_config()
+    # Komisyon açıkça verilir: gerçek config (Midas, 0 komisyon) ile ücret 0
+    # olur ve "total_fees raporlanıyor mu" sorusu test edilemez.
+    cfg = dataclasses.replace(load_trading_config(), commission_pct=0.1, min_commission_try=1.0)
     ensure_portfolio(committed_conn, cfg.starting_balance)
     symbol_id = upsert_symbol(committed_conn, "THYAO.IS", "BIST", "TRY")
     upsert_prices(committed_conn, symbol_id, [("2026-09-10", 100.0, 100.0, 100.0, 100.0, 100.0, 1000.0)])

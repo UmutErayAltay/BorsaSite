@@ -153,3 +153,76 @@ def test_record_snapshot_overwrites_same_day(conn):
         ("2026-09-10",),
     ).fetchone()
     assert rows["n"] == 1
+
+
+# --- Faz 6/7: beklenen edge filtresi ----------------------------------------
+# CFG'de pozisyon = 10000 * %50 = 5000 TL, komisyon = 2.5 + BSMV ≈ 2.62 TL,
+# yani round-trip ücret ≈ 5.24 TL. min_expected_edge_pct=%1 → 50 TL güvenlik
+# payı, gereken toplam ≈ 55.24 TL.
+
+
+def test_buy_without_expected_return_behaves_exactly_as_before(conn):
+    """Eski çağıran deseni: `expected_return` HİÇ verilmiyor. Edge kontrolü
+    varsayılan 0.0 yani kapalı olduğu için alım yine de başarılı olmalı ve
+    bakiye tam olarak eskisi gibi düşmeli (geriye uyumluluk)."""
+    assert CFG.min_expected_edge_pct == 0.0
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _symbol(conn)
+
+    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=CFG)
+
+    assert ok is True, reason
+    state = get_state(conn)
+    assert state.balance == 10000.0 - 5000.0 - 2.62
+    assert len(state.open_positions) == 1
+
+
+def test_buy_rejected_when_expected_return_below_cost_plus_margin(conn):
+    """min_expected_edge_pct açıkken düşük beklenen getirili alım REDDEDİLİR
+    ve sebep edge'den bahseder."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    ensure_portfolio(conn, edge_cfg.starting_balance)
+    symbol_id = _symbol(conn)
+
+    # %0.5 → 25 TL beklenen kâr, round-trip ~5.24 + %1 pay 50 TL = ~55.24 TL
+    ok, reason = buy(
+        conn, symbol_id, price=100.0, prob_up=0.7,
+        decision_date=date(2026, 9, 10), cfg=edge_cfg, expected_return=0.005,
+    )
+
+    assert ok is False
+    assert "beklenen kâr" in reason
+    assert "round-trip ücret" in reason
+    # reddedilen alım hiçbir iz bırakmamalı
+    assert get_state(conn).balance == edge_cfg.starting_balance
+    assert get_open_position(conn, symbol_id) is None
+
+
+def test_buy_succeeds_when_expected_return_clears_cost_plus_margin(conn):
+    """Aynı cfg altında yeterli beklenen getiri (%), alım BAŞARILI olmalı."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    ensure_portfolio(conn, edge_cfg.starting_balance)
+    symbol_id = _symbol(conn)
+
+    # %2 → 100 TL beklenen kâr > 55.24 TL gereken
+    ok, reason = buy(
+        conn, symbol_id, price=100.0, prob_up=0.7,
+        decision_date=date(2026, 9, 10), cfg=edge_cfg, expected_return=0.02,
+    )
+
+    assert ok is True, reason
+    assert get_open_position(conn, symbol_id) is not None
+    assert get_state(conn).balance == 10000.0 - 5000.0 - 2.62
+
+
+def test_buy_rejected_when_expected_return_omitted_while_edge_enabled(conn):
+    """Edge kontrolü açıkken beklenen getiri 0 (bilinmiyor) → sessizce
+    geçmemeli, reddedilmeli: motor NULL expected_return'ı 0.0'a düşürür."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    ensure_portfolio(conn, edge_cfg.starting_balance)
+    symbol_id = _symbol(conn)
+
+    ok, reason = buy(conn, symbol_id, price=100.0, prob_up=0.7, decision_date=date(2026, 9, 10), cfg=edge_cfg)
+
+    assert ok is False
+    assert "beklenen kâr" in reason

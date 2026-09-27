@@ -29,6 +29,9 @@ def load_trained_model():
 def run(latest_only: bool = True) -> dict:
     bundle, cfg = load_trained_model()
     model = bundle["model"]
+    # Bu alanı içermeyen ESKİ .pkl dosyalarıyla da çalışabilmelidir (canlıdaki
+    # mevcut model dosyasında yoktur) — bu yüzden .get(), [] değil.
+    magnitude_model = bundle.get("magnitude_model")
     version = bundle.get("version", cfg["model"].get("version", "1.0"))
     threshold = float(cfg["prediction"].get("direction_threshold", 0.5))
 
@@ -48,8 +51,17 @@ def run(latest_only: bool = True) -> dict:
     df = df.copy()
     df["prob_up"] = probs
     df["predicted_up"] = (probs >= threshold).astype(int)
+    if magnitude_model is not None:
+        df["expected_return"] = magnitude_model.predict(X)
+    else:
+        df["expected_return"] = None
 
     stats = {"predictions": 0, "avg_prob_up": round(float(probs.mean()), 4)}
+    stats["avg_expected_return"] = (
+        round(float(df["expected_return"].mean()), 6)
+        if magnitude_model is not None
+        else None
+    )
 
     with get_connection() as conn:
         init_schema(conn)
@@ -62,6 +74,11 @@ def run(latest_only: bool = True) -> dict:
                 prob_up=float(row["prob_up"]),
                 predicted_up=int(row["predicted_up"]),
                 model_version=version,
+                expected_return=(
+                    float(row["expected_return"])
+                    if row.get("expected_return") is not None
+                    else None
+                ),
             )
             stats["predictions"] += 1
 

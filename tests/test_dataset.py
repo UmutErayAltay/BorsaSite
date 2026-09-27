@@ -51,6 +51,25 @@ def pytest_approx(value: float):
     return pytest.approx(value, rel=1e-9, abs=1e-12)
 
 
+def test_target_return_equals_forward_return():
+    """Faz 7: getiri BÜYÜKLÜĞÜ hedefi (`target_return`), `forward_return` ile
+    birebir aynı trade'i (D+1 açılış giriş, D+h kapanış çıkış) hedefliyor —
+    ayrı bir next-day hesaplaması YOK (eskiden vardı, Faz 1'in düzelttiği
+    target/trade uyumsuzluğunu tekrar üretiyordu)."""
+    h = 3
+    idx = pd.date_range("2026-01-01", periods=6)
+    df = pd.DataFrame(
+        {
+            "open": [10.0, 11.0, 9.0, 12.0, 13.0, 14.0],
+            "close": [10.5, 11.5, 9.5, 12.5, 13.5, 14.5],
+            "volume": [100.0] * 6,
+        },
+        index=idx,
+    )
+    out = add_technical_features(df, {"horizon": h})
+    pd.testing.assert_series_equal(out["target_return"], out["forward_return"], check_names=False)
+
+
 def _seed_symbol_with_history(conn, ticker: str = "THYAO.IS", days: int = 70, trend: float = 0.0) -> int:
     """`trend` serinin günlük eğimi (güçlü/weak sembol ayrımı için). ZOR: zigzag
     genliği ±0.05 olduğu için `abs(trend) < 0.05` olmalı — tekdüze artan bir
@@ -119,3 +138,23 @@ def test_target_up_is_built_against_daily_bist_median(committed_conn):
     expected = 1.0 if sample["forward_return"] > med[sample["feature_date"]] else 0.0
     assert sample["target_up"] == expected
     assert strong_rows["target_up"].max() == 1.0
+
+
+def test_build_dataset_target_return_matches_target_up_nan_mask(committed_conn):
+    """target_return (Faz 7 - getiri büyüklüğü) forward_return'ın birebir
+    aynısı, dolayısıyla target_up ile aynı satırlarda (son `horizon` satır)
+    NaN olmalı — ayrı bir maske yok."""
+    symbol_id = _seed_symbol_with_history(committed_conn)
+    committed_conn.commit()
+
+    predict_rows = build_dataset(require_target=False)
+    predict_rows = predict_rows[predict_rows["symbol_id"] == symbol_id]
+    assert predict_rows["target_up"].isna().sum() == HORIZON
+    assert predict_rows["target_return"].isna().sum() == HORIZON
+    assert predict_rows.loc[predict_rows["target_up"].isna(), "target_return"].isna().all()
+
+    # Eğitim yolu: target_up filtresi target_return'ı da kapsıyor — ayrı filtre gerekmiyor.
+    train_rows = build_dataset()
+    train_rows = train_rows[train_rows["symbol_id"] == symbol_id]
+    assert not train_rows.empty
+    assert train_rows["target_return"].notna().all()

@@ -120,20 +120,63 @@ Mevcut: `max_open_positions`, `max_position_pct`, `max_portfolio_exposure_pct`,
 `max_hold_days`, `min_position_value_try` — hepsi `config/trading.yaml`'da,
 gerçek ve test edilmiş (`test_engine.py`, `test_portfolio.py`).
 
-Eksik: stop-loss, take-profit, cooldown-after-exit, maximum single-position
-loss, minimum expected edge after costs. (`sell` sadece `sell_threshold`
-altına düşünce ya da `max_hold_days` dolunca tetikleniyor — fiyat bazlı
-hiçbir çıkış yok.)
+**2026-09-26 güncellemesi — stop-loss/take-profit/cooldown eklendi (commit
+`1302a52`):** `config/trading.yaml::stop_loss_pct` (%7) ve `take_profit_pct`
+(%15), `run_once()`'ta `sell_threshold`/`max_hold_days`'ten ÖNCE kontrol
+ediliyor (fiyat bazlı çıkış artık var). `cooldown_days_after_exit` (3 gün):
+satılan bir sembol cooldown dolmadan yeniden alım adayı olamıyor
+(`_last_exit_date`, `trades.closed_at`'e bakıyor). Üçü de varsayılan
+kapalı (0.0/0), geriye uyumlu. Testler: `test_engine.py`'de 5 yeni senaryo
+(tetikleme, kapalıyken tetiklenmeme, cooldown red/geçiş), mutation-test ile
+doğrulandı.
+
+**2026-09-26 karar (Umut):** **maximum single-position loss** ayrı bir
+mekanizma DEĞİL — mevcut stop-loss (%7, pozisyon bazlı fiyat çıkışı) aynı
+kavramın karşılığı sayılıyor, bu madde kapandı, ek kod gerekmiyor.
+
+**2026-09-27 çözüldü — minimum expected edge after costs (commit `f4b7efb` +
+`6d54172`):** önce `pipeline/train_model.py`'ye `target_return` hedefiyle bir
+XGBRegressor (`magnitude_model`) eklendi, `predictions.expected_return`'a
+yazılıyor; sonra `trading/costs.py::check_expected_edge` bunu round-trip
+işlem maliyeti + `min_expected_edge_pct` güvenlik payıyla karşılaştırıyor
+(`portfolio.py::buy()`, `engine.py`'nin aday sorgusundan `COALESCE(...,
+0.0)` ile besleniyor). Varsayılan kapalı (0.0), geriye uyumlu. 23 yeni test.
+
+**2026-09-27 kapandı (commit `7333b48`):** `backtest/portfolio.py`/
+`backtest/engine.py` artık aynı `check_expected_edge` deseniyle canlı
+motoru birebir yansıtıyor. Boşluk kalmadı. 146 test yeşil.
 
 ## 7. Modelleme problemleri
 
-- Tek model versiyonu, deney takibi yok (`model_experiments`/`model_metrics`
-  gibi bir tablo yok — sadece `data/models/metrics.json` her çalıştırmada
-  ÜZERİNE YAZILIYOR, geçmiş deneyler kaybolur).
-- Feature importance / SHAP raporu hiç üretilmiyor.
-- Yeni feature grubu (momentum, volatilite, trend, market context) hiç
-  denenmemiş — 12 feature README'nin ilk günden beri aynı.
-- Calibration hiç ölçülmemiş — `prob_up=0.70` gerçekten ~%70 mü, bilinmiyor.
+- **2026-09-27 kapandı (commit `5f8532c`):** deney takibi — `pipeline/
+  db.py::model_experiments` tablosu, her `train_model.run()` çağrısı
+  (model_version, satır sayıları, accuracy/roc_auc/mae/r2, xgb params)
+  kalıcı bir satır bırakıyor; `metrics.json` hâlâ yazılıyor (üzerine
+  yazılsa da artık geçmiş kaybolmuyor). 150 test yeşil.
+- **2026-09-27 kapandı (aynı commit):** feature importance —
+  `train_model.py`'de gerçekten eğitilmiş sınıflandırıcının
+  `feature_importances_`'ından `metrics["feature_importance"]`
+  (uydurma değil, gerçek eğitim çıktısı). SHAP raporu YAPILMADI (ayrı,
+  daha ağır bir bağımlılık/hesap gerektirir — istenirse ayrı bir iş).
+- **Hâlâ açık:** yeni feature grubu (momentum, volatilite, trend, market
+  context) hiç denenmemiş — 12 feature README'nin ilk günden beri aynı.
+  Bu, tek bir kod değişikliği DEĞİL: gerçek geçmiş veriyle backtest/
+  walk-forward karşılaştırması gerektiren bir deney döngüsü (yeni feature
+  ekle → yeniden eğit → walk-forward'da eskiyle karşılaştır → sadece
+  gerçekten ölçülebilir bir iyileşme varsa production'a al). Bu container
+  boş/test verisiyle çalışıyor, gerçek BIST geçmişi yfinance'ten çekilmesi
+  gerekir (`scripts/run_fetch_prices.py`) — sahte bir "iyileşti" iddiası
+  üretmemek için bu turda YAPILMADI, gerçek veriyle ayrı bir tur gerekir.
+- ~~Calibration hiç ölçülmemiş~~ — **bu bulgu YANLIŞ/eski çıktı (2026-09-27
+  doğrulandı):** `backtest/calibration.py::ProbabilityCalibrator` zaten var
+  (isotonic/sigmoid, sadece validation'da fit, OOS'ta Brier before/after
+  ölçülüyor — bkz. `backtest/walk_forward.py`, `test_calibration.py`,
+  `test_walk_forward.py`). Muhtemelen bu madde Faz 5 tamamlanmadan
+  yazılmış ve audit güncellenmemiş. Açık soru KALDI ama farklı: bu ölçüm
+  SADECE `run_walk_forward`/`run_backtest` script'i elle/manuel çalıştırınca
+  üretiliyor — GH Actions'daki günlük scheduler'da (Faz 10, `.github/
+  workflows/`) rutin bir parçası DEĞİL, yani canlı modelin güncel
+  kalibrasyonu sürekli izlenmiyor, sadece ad-hoc sorgulanabiliyor.
 
 ## 8. Veri eksikleri / veri kalitesi
 
@@ -145,23 +188,75 @@ hiçbir çıkış yok.)
   bağlanmamış haber kontrolü de yok (entity_linker'daki 4 düzeltme
   YANLIŞ eşleştirmeyi çözdü, ama "veri bozuk mu" kontrolü ayrı bir konu,
   hâlâ yok).
-- Intraday veri sağlayıcısı hiç değerlendirilmemiş — mevcut `yfinance`
-  tabanlı `fetch_prices.py`'nin gerçek intraday (5m/15m/1h) geçmiş veri
-  sağlayıp sağlamadığı bu audit kapsamında doğrulanmadı, Faz 9 öncesi
-  ayrıca kontrol edilmeli.
+- **2026-09-27 doğrulandı (gerçek ağ isteğiyle, `config/symbols.yaml`'daki
+  gerçek BIST/US sembolleriyle):** `yfinance` (kurulu sürüm 1.7.0 —
+  `requirements.txt`'teki `>=0.2.40` pin'i çok geride, ayrı bir bulgu,
+  aşağıda) BIST için gerçek intraday geçmiş veri VERIYOR:
+  - `Ticker(...).history(period=..., interval=...)` (mevcut
+    `fetch_prices.py`'nin zaten kullandığı desen, `download()` DEĞİL —
+    `download()` MultiIndex kolon döndürüyor, `.history()` tek seviyeli
+    kalıyor, kod değişmeden uyumlu).
+  - Gerçek pencereler (THYAO.IS ile ölçüldü): `1m` ~7-8 gün, `5m`/`15m`/
+    `30m` 60 gün, `1h` **730 gün** (`period="max"` bunu YANSITMIYOR, sadece
+    ~1 yıl döndürüyor — `period="730d"` açıkça istenmeli).
+  - Veri kalitesi: OHLCV'de NaN yok, günler arası/hafta sonu boşlukları
+    beklenen (16 saat / 2 gün 16 saat) dışında anormal boşluk yok.
+  - **Gerçek tuzak (2026-09-27 ikinci turda DÜZELTİLDİ — ilk yazımda
+    yanlış konumlandırılmıştı):** her BIST sembolünde (5+ sembol, likit ve
+    az likit fark etmeden, 5m/15m/1h'de test edildi) günde TAM 1 bar
+    `Volume=0` VE `Open=High=Low=Close` (düz, tek fiyat) geliyor — bu
+    günün SON bar'ı DEĞİL, açılıştan hemen SONRAKİ İKİNCİ bar (15m'de
+    09:45, 5m'de 09:55, 1h'de 09:30 — yani açılış müzayedesi anlık
+    görüntüsü, gerçek sürekli işlem başlamadan önceki bir Yahoo
+    artefaktı). AAPL'de (ABD) bu YOK. Konumu SABİT DEĞİL (interval'e göre
+    değişir) — implementasyon pozisyona göre ("ilk"/"son" bar) değil,
+    **`Volume == 0` koşuluna göre** filtrelemeli, bu daha genel ve doğru
+    kural.
+  - 5 sembole art arda gerçek istek atıldı, rate-limit/429 görülmedi —
+    ama üretimde ~35 BIST + birkaç US sembolü × birden fazla interval
+    düzenli çekilecekse throttling/backoff YİNE de eklenmeli, test
+    edilmedi.
+  - **Sonuç: Faz 9-10'un önündeki veri-sağlayıcı engeli KALKTI** — veri
+    gerçekten var ve kalitesi kabul edilebilir. Kalan iş artık araştırma
+    değil, mühendislik: `pipeline/fetch_prices.py`'nin intraday bar
+    çekme + DB şeması (`prices_daily` değil ayrı bir `prices_intraday`
+    tablosu gerekir, günlük tabloyla karıştırılmamalı) + bu bar'ları
+    kullanan bir feature/model/backtest katmanı — bu hâlâ ayrı,
+    büyük bir tur, ama "önce doğrulama" artık yapıldı.
+  - **İlgisiz ama gerçek bir bulgu:** `requirements.txt::yfinance>=0.2.40`
+    pin'i kurulu `1.7.0`'dan çok geride — büyük bir major sürüm farkı.
+    Şu an `fetch_prices.py` (tek-sembol `.history()`) bu sürümle hâlâ
+    çalışıyor (doğrulandı) ama pin güncellenmeli, aksi halde farklı bir
+    ortamda hangi sürümün kurulacağı belirsiz.
 
 ## 9. Test kapsamı
 
-693 satır test, 8 dosya. Kapsanan: `trading/engine.py` (6 test),
-`trading/portfolio.py` (9 test), `trading/costs.py` (4 test),
-`pipeline/entity_linker.py` (kapsamlı, 179 satır), DB migration, API portfolio
-endpoint'i, trading config yükleme.
+**2026-09-27 güncel:** 150 test, ~22 dosya (audit yazıldığındaki "693 satır,
+8 dosya" çok eski — Faz 6/7 çalışması boyunca büyüdü). `trading/`,
+`backtest/`, `pipeline/entity_linker.py`, DB migration, API portfolio
+endpoint'i, trading config yükleme, artık `pipeline/{dataset,train_model,
+predict_model}.py` da kapsanıyor (aşağı bkz.).
 
-**Kapsanmayan (sıfır test):** `pipeline/dataset.py`, `pipeline/features.py`,
-`pipeline/train_model.py`, `pipeline/predict_model.py` — yani tam olarak
-feature/target/leakage riskinin yaşadığı kod hiç test edilmiyor. §2'deki
-etiket hatası bir birim testiyle (ör. "serinin son elemanı için target NaN/
-hariç tutulmalı") yakalanabilirdi.
+**2026-09-27 kapandı:** dört dosyanın da artık testi var — `test_dataset.py`
+(`target_up`/`target_return` son-satır NaN regresyonu + `build_dataset`
+filtre uyumu, `add_technical_features`'ı da dolaylı kapsıyor),
+`test_train_model.py`, `test_predict_model.py` (bu turda eklendi, bkz.
+§6/§7). 150 test, 12+ dosya. Kapsanmayan tek şey feature/target/leakage
+kodunun TAMAMI değil — yeni eklenen feature grubu denemesi (§7, hâlâ açık)
+gündeme gelirse o da kendi testini isteyecek.
+
+**2026-09-27 bulunan bir test-altyapısı sınırlaması (Faz 9-10 çalışması
+sırasında keşfedildi):** `tests/conftest.py::committed_conn`'un
+`TRUNCATE symbols ... CASCADE`'i, Postgres'in TRUNCATE CASCADE semantiği
+yüzünden `symbols`'a FK'si olan HER tabloyu (o tabloyu adıyla listede
+saymasan BİLE) siler — `prices_intraday` dahil (deneyle doğrulandı).
+Aynı yerel Postgres'te gerçek/pahalı fetch edilmiş intraday veri varsa
+(bu turda 547K satır), `committed_conn` kullanan 7 test dosyasından biri
+her `pytest` koşusunda onu sessizce siler. Kalıcı düzeltme: o 7 dosyanın
+her birine `tests/test_intraday_dataset.py`'deki ticker-scoped temizlik
+desenini retrofit etmek — mevcut testlerin (RESTART IDENTITY, satır
+sayısı) varsayımlarını denetlemeden yapmak riskli olduğu için bu turda
+YAPILMADI, ayrı bir tur gerektiriyor.
 
 ## 10. Scheduler / retraining
 
@@ -188,11 +283,201 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
 4. Faz 3: işlem maliyeti + slippage + spread modeli (aynı-bar execution
    hatasını da burada düzelt).
 5. Faz 4: walk-forward validation.
-6. Faz 5: threshold + calibration (yalnızca train/validation ile).
-7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek).
-8. Faz 7: feature deneyleri + model iyileştirme.
-9. Faz 8: dashboard/raporlama.
-10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması şart).
+6. Faz 5: threshold + calibration (yalnızca train/validation ile). ✓
+   (kod zaten var — `backtest/calibration.py`/`thresholds.py`, audit'in §7
+   "calibration hiç ölçülmemiş" bulgusu yanlış çıktı, 2026-09-27'de
+   düzeltildi — bkz. §7. Rutin/scheduled DEĞİL, hâlâ sadece ad-hoc.)
+7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek). ✓ (2026-09-26/27, bkz. §6 güncellemesi — ikisi de kapandı: max single-position loss = stop-loss, min-expected-edge Faz 7'nin bir parçası olarak çözüldü)
+8. Faz 7: feature deneyleri + model iyileştirme. Beklenen getiri büyüklüğü
+   tahmini (magnitude_model) kısmı ✓ (2026-09-27, bkz. §6); calibration
+   zaten vardı (yukarı bkz.); deney takibi + feature importance ✓
+   (2026-09-27, bkz. §7); yeni feature grubu denemesi (momentum/volatilite/
+   market context) hâlâ açık — gerçek geçmiş veriyle ölçülmesi gereken bir
+   deney döngüsü, tek bir kod değişikliği değil.
+9. Faz 8: dashboard/raporlama. ✓ (2026-09-27 doğrulandı — bu madde de
+   audit'te işaretsizdi ama kod zaten vardı: `api/main.py` + `web/
+   index.html`, geniş bir `/api/*` yüzeyi (stats/symbols/predictions/
+   portfolio/trades/prices/news/chart), `backtest/reports.py` JSON/CSV/
+   HTML rapor üretiyor, `test_api_portfolio.py` ile test edilmiş.)
+10. Faz 9-10: intraday mimari + backtest. `pipeline/intraday_watch.py`
+    hâlâ GÜNLÜK bar kullanıyor (haber/KAP tetikli erken çıkış, kendi
+    docstring'i bunu bilinçli sınır olarak yazıyor), bu Faz 9-10'un
+    ASIL istediği (5m/15m/1h) FİYAT mimarisi değildi.
+
+    **2026-09-27 — TAMAMLANDI, GERÇEK VERİYLE ÇALIŞTIRILDI, SONUÇ OLUMSUZ:**
+    Umut "gerçekten yeni bir intraday model/strateji" istedi (günlük
+    modeli daha sık çalıştırma DEĞİL). Kurulan mimari: `pipeline/
+    intraday_features.py`/`intraday_dataset.py` (hedef SADECE gün içi,
+    gece sıçraması hedeflenmez — her günün son bar'ının hedefi NaN),
+    `pipeline/intraday_train_model.py` (sınıflandırıcı+regresor,
+    `f4b7efb`'deki iki-modelli bundle deseni), `backtest/intraday_engine.py`
+    (gün-içi al/sat + gün sonu ZORUNLU kapanış — strateji gece pozisyon
+    TUTMUYOR, model gece riski hakkında hiç fikir üretmiyor). Veri
+    sağlayıcı doğrulaması (§8) geçti, 101 sembol için 547.058 gerçek 1h
+    bar (2023-10-27→2026-09-25) çekildi. 22 yeni test, hepsi gerçek yerel
+    Postgres'e karşı (`committed_conn`'un TRUNCATE CASCADE'i bu gerçek
+    veriyi sildiği içi ticker-scoped fixture'lar kullanıldı, bkz. §9).
+
+    **Gerçek eğitim + gerçek backtest sonucu (2.9 yıllık gerçek BIST
+    verisi, 101 sembol):**
+    - Sınıflandırıcı: accuracy %54.1, ROC AUC 0.547 — tura-yazı'dan
+      (0.50/0.50) BELİRGİN ŞEKİLDE İYİ DEĞİL.
+    - Regresor (beklenen getiri büyüklüğü): R² = **-0.006** — sabit
+      ortalamayı tahmin etmekten daha KÖTÜ. Gerçek bir sinyal YOK.
+    - Feature importance'ın **%76.5'i `is_bist`** (BIST mi ABD mi)
+      tarafından açıklanıyor — model gerçek teknik/zaman-dilimi sinyalini
+      DEĞİL, iki piyasanın kaba volatilite farkını öğrenmiş.
+    - Backtest (10.000 TL başlangıç, `buy_threshold=0.55`/
+      `sell_threshold=0.50`, komisyon+BSMV gerçek, 592 kapanan işlem):
+      **toplam getiri %-35.4, yıllıklandırılmış %-14.2, maksimum düşüş
+      %35.7, Sharpe -3.58, kazanma oranı %24.3, işlem başı net beklenti
+      -5.98 TL.** Brüt kâr/zarar oranı (`profit_factor`, ücretsiz) 2.29 —
+      kağıt üzerinde olumlu görünüyor ama gerçek işlem maliyeti (592
+      işlemde toplam 5.920 TL komisyon) bunu tersine çeviriyor.
+    - **Sonuç (ilk deney): bu v1 model CANLIYA ALINMAMALI.** Gerçek,
+      ölçülmüş bir kayıp üretiyor — "henüz iyi değil" değil, "aktif
+      olarak zarar ettiriyor" seviyesinde. Bu, iddia edilmemiş bir
+      başarı değil, dürüstçe raporlanmış bir olumsuz sonuç.
+
+    **2026-09-27 — İKİNCİ DENEY: BIST/ABD ayrımı denendi, İYİLEŞTİRMEDİ
+    (aksine kötüleşti).** `is_bist`'in ezici ağırlığı (yukarı bkz.), gerçek
+    teknik sinyalin karışık pazar etkisinin altında kaldığını
+    düşündürüyordu — ayrıca canlı `trading/engine.py` zaten SADECE BIST
+    alıyor (US sembolleri hiç ticaret edilmiyor). `pipeline/
+    intraday_dataset.py` SADECE BIST'e daraltıldı (`babee1d`), `is_bist`
+    feature'ı kaldırıldı (artık sabit/anlamsız olurdu), gerçek veriyle
+    yeniden eğitildi ve backtest edildi:
+    - Sınıflandırıcı: accuracy %58.1 — ama `y_test` ortalaması %41.5,
+      yani "her zaman düş" gibi TRİVİYAL bir taban çizgi %58.5 alır,
+      model bunun BİLE altında. ROC AUC **0.525** — karışık modelin
+      0.547'sinden DAHA KÖTÜ.
+    - Regresor R² = -0.0121 — hâlâ sabit ortalamadan kötü, hatta biraz
+      daha kötü (-0.0065'ten).
+    - Feature importance artık makul dağılmış (`bar_of_day` %14.8 en
+      yüksek, tekil bir feature'ın ezici ağırlığı yok) — ama bu, altında
+      GİZLİ KALMIŞ güçlü bir sinyal ortaya ÇIKARMADI, sadece tüm
+      feature'ların ZAYIF/eşit-derecede-bilgisiz olduğunu gösterdi.
+    - Backtest (aynı eşikler, gerçek komisyon): **toplam getiri %-43.75**
+      (BIST+ABD karışığından DAHA KÖTÜ: %-35.4), Sharpe **-3.94** (daha
+      kötü: -3.58), maksimum düşüş %45.1 (daha kötü: %35.7), 868 işlem
+      (592'den fazla — daha fazla işlem = daha fazla ücret, $8.680 vs
+      $5.920), bitiş bakiyesi 5.625 TL (6.461 TL'den daha kötü).
+    - **Yorum:** iki model de ROC AUC ~0.52-0.55 (rastgeleye çok yakın)
+      olduğu için, hangisinin "daha az kötü" göründüğü büyük ölçüde bu
+      TEK test döneminin GÜRÜLTÜSÜ olabilir, gerçek bir yetenek farkı
+      DEĞİL — walk-forward yapılmadan bu ayrım güvenle yorumlanamaz.
+      Yine de mimari değişiklik (sadece ticaret edilen evrenle eğitmek)
+      DOĞRU bir mühendislik kararı olarak KORUNDU (`babee1d`) — hangi
+      sayı "şanslı" çıkarsa çıksın, ticaret etmediğin sembollerle model
+      eğitmenin bir gerekçesi yok.
+    - ~~**NİHAİ SONUÇ:** bu yaklaşım yeterli öngörücü sinyal İÇERMİYOR~~
+      — **BU SONUÇ YANLIŞTI (2026-09-27, aynı gün düzeltildi, aşağı bkz.
+      v2).** ROC AUC'a bakıp "sinyal yok" dedim; işlem-düzeyi teşhis
+      yapmadım. Teşhis yapılınca v1'in BRÜT kârı POZİTİF çıktı — sorun
+      sinyal değil strateji/maliyet tasarımıydı.
+
+    **2026-09-27 — v2: TEŞHİS + YENİDEN TASARIM (`c9969ce`, `215cf18`):**
+
+    *Teşhis (v1 backtest'inin işlem dökümü):* brüt kâr **+4.305 TL**,
+    ücret **8.680 TL** — kaybın TAMAMI ücretten. Üç kök neden:
+    (1) **churn** — 868 işlemin 673'ü "prob düştü" ile çıkmış, 552'si
+    yalnızca 1 saat tutulmuş: model "bir sonraki saat"i tahmin ediyor,
+    strateji her saat fikir değiştirip ücret ödüyordu (hedef/strateji
+    uyumsuzluğu); (2) **bug** — günün son barında giriş = aynı fiyattan
+    anında zorla kapanış, 158 işlem brüt 0; (3) **in-sample** — backtest
+    eğitim dönemini de oynatıyordu. Ayrıca maliyet yapısı: 10.000 TL
+    hesapta %15 pozisyon = 1.500 TL, 5 TL asgari komisyon → round-trip
+    **%0.667** (taban olmasa %0.105) — tipik 1 saatlik hareketten büyük.
+
+    *Yeniden tasarım:* hedef "gün sonuna kadar getiri" (strateji zaten
+    gün sonuna kadar tutuyor); kesitsel piyasa bağlamı feature'ları
+    (aynı andaki tüm BIST'e göre ortalama/fark/sıra/genişlik) + gap,
+    önceki gün, 5 günlük getiri, volatilite; günde sembol başına tek
+    giriş, prob-flip çıkışı yok, son barda giriş yok, dolum SONRAKİ barın
+    açılışından (aynı-bar iyimserliği yok). `bars_left` bilinçli olarak
+    EKLENMEDİ (yarım günleri önceden bilirdi = sızıntı). Look-ahead testi
+    mutasyonla doğrulandı.
+
+    *Dürüstlük protokolü:* gün bazlı kronolojik train %60 / val %20 /
+    test %20; eşik (val tahminlerinin 0.998 kantili) SADECE val'de
+    seçildi; test bir kez raporlandı; backtest varsayılan olarak SADECE
+    test dönemini oynatır. **Not:** ara bir denemede pozisyon büyüklüğünü
+    test sonuçlarına bakarak seçip "+%8.6" buldum — bu test'i
+    gözetlemekti, val'de seçilince GENELLENMEDİ; o sayı geçersiz.
+
+    *Gerçek sonuç (hiç görülmemiş test, 2026-02-27→2026-09-25, 50 BIST
+    sembolü):*
+    - Regresör bilgi katsayısı (IC) val 0.063 / test 0.057 — küçük ama
+      val→test tutarlı, gerçek bir sinyal.
+    - Deney tarafında: modelin seçtiği işlemler, aynı sayıda rastgele
+      işlemin **50 tekrarının hepsini** geçti; eşik sıkılaştıkça brüt
+      kâr/işlem düzenli arttı (+%0.24 → +%0.39 → +%0.65) — tek bir
+      şanslı eşik değil.
+    - Production backtest motoru: **62 işlem, brüt +439 TL, ücret
+      620 TL, toplam %-1.81** (yıllık %-3.2), maks. düşüş **%2.0**,
+      hepsi gün sonu çıkışı. v1'in yıllık %-18.2 / %45 düşüşüne göre
+      büyük iyileşme, ama hâlâ başabaş-altı.
+    - **Duyarlılık (sonuç DEĞİL, senaryo):** aynı 62 işlem, 5 TL taban
+      olmadan (sadece %0.05 komisyon + BSMV): ücret 84 TL, **toplam
+      +%3.69**, Sharpe 1.67, maks. düşüş %1.1. Kârlılığı belirleyen şey
+      artık model değil, komisyon yapısı.
+    - **Karar: canlıya ALINMAMALI (mevcut config ile).** 62 işlem küçük
+      bir örneklem; deney tarafındaki bootstrap %90 güven aralığı sıfırın
+      iki yanında. Canlıya almadan önce: (a) Umut'un gerçek aracı
+      kurumunun asgari komisyonu doğrulanmalı (`config/trading.yaml::
+      min_commission_try: 5.0` gerçek mi?), (b) daha uzun bir OOS dönemi
+      (walk-forward) ile örneklem büyütülmeli. Pozisyon büyüklüğünü
+      artırmak maliyet yüzdesini düşürür ama bu bir RİSK POLİTİKASI
+      kararı (Faz 6'daki gibi Umut'un) — kod içinde sessizce
+      değiştirilmedi.
+    - Model dosyaları (`data/models/xgb_intraday_1h*.pkl`/`.json`) bu
+      container'da diskte duruyor, `.gitignore::data/` sayesinde commit
+      edilmedi (doğrulandı) — kalıcı değil, container kapanınca kaybolur.
+11. **Komisyon araştırması + uzun walk-forward testi (2026-09-27).**
+    - Gerçek maliyet: Midas/Enpara BIST'te 0 komisyon; bankalar işlem başı
+      binde 1.9-5 + BSMV %5, asgari ~0.65-1 TL (Garanti, Osmanlı). Config'teki
+      `min_commission_try: 5.0`'ı destekleyen kaynak bulunamadı (config
+      değiştirilmedi, karar Umut'un). Spread: BIST fiyat adımı tablosuna göre
+      50 sembolde 1 tick = medyan 6-7 bps, p90 10 bps → senaryolar: gerçekçi
+      slip 5 + spread 10 bps, muhafazakâr 10/20.
+    - `backtest/intraday_walk_forward.py`: genişleyen pencere, 250 gün ilk
+      train, 60 val, 60 test; eşik her fold'da kendi val'inden; 7 fold,
+      2025-02-10 → 2026-09-25 (~410 işlem günü, önceki tek bölmenin ~3 katı),
+      tek sürekli portföy. Parametreler önceden sabitlendi, test'e bakarak
+      hiçbir şey seçilmedi.
+    - **Sonuç: ticari sinyal YOK.** 147 işlem, maliyetsiz brüt -103 TL
+      (işlem başı -7.8 bps, kazanma %40). Bootstrap %95 GA [-51, +39] bps,
+      gün-blok [-69, +44]. Rastgele taban (30 koşu, aynı giriş oranı) medyan
+      -8.2 bps — modeli 30'un 14'ü geçti, yani model rastgeleden ayırt
+      edilemiyor. Yıla göre: 2025 -62 bps (65 işlem), 2026 +35 bps (82) —
+      §10'daki pozitif tek-bölme sonucu bu 2026 dönemine denk geliyordu,
+      döneme özgüydü. Maliyet ekleyince her senaryo negatif: sıfır komisyon
+      + gerçekçi spread -%4.4, banka -%11.1, mevcut config -%18.7.
+    - Teşhis (işlem düzeyi, Kurallar gereği): kayıp maliyetten DEĞİL, brüt
+      zaten ~0. Test IC her fold'da pozitif (0.031-0.085) — yani ortalama
+      sıralama bilgisi var ama en uç %0.2 tahmin (giriş kuyruğu) bunu
+      getiriye çevirmiyor. Olası sonraki adım (henüz yapılmadı): giriş
+      kantilini her fold'un KENDİ val'inde seçmek (iç içe seçim) veya
+      piyasa-geneli bileşeni ayırıp saf kesit sıralaması denemek. Mevcut
+      haliyle canlıya ALINMAMALI.
+12. **Son deneme — intraday KAPATILDI (2026-09-27).** Ön kayıtlı
+    (`docs/experiments/2026-09-27-intraday-son-deneme.md`, kriterler
+    çalıştırmadan önce commit `423dc1d`): kesitsel fazla getiri hedefi +
+    giriş kantili her fold'un kendi val'inde seçildi. 343 işlem, Midas +
+    gerçekçi spread ile net %-11.2; işlem başı brüt -5.1 bps, GA
+    [-35, +30]. Model rastgeleyi 28/30 geçiyor (~8 bps sıralama bilgisi var)
+    ama rastgele girişin kendisi -13.6 bps; üç kriterden ikisi kaldı →
+    intraday hattı kapatıldı. Kod (`pipeline/intraday_*`,
+    `backtest/intraday_*`) araştırma altyapısı olarak repoda kalıyor.
+    Aynı gün `config/trading.yaml` komisyonu Umut'un aracı kurumuna (Midas,
+    0) çekildi — canlı GÜNLÜK motor da bunu kullanır.
+13. **Günlük model dürüst test — KALDI (2026-09-27).** Ön kayıtlı
+    (`docs/experiments/2026-09-27-gunluk-model-durust-test.md`). 10 yıllık
+    günlük veri, walk-forward OOS 2019-02 → 2026-08, 918 işlem: strateji
+    toplam %120 (yıllık %11) — aynı 50 hissenin eşit ağırlıklı al-tut'u
+    %2032, XU100 %1247, rastgele model medyanı %226. Üç kriter de kaldı.
+    Canlı günlük strateji hisse seçerek değer katmıyor; TL enflasyonu altında
+    çoğunlukla nakitte beklemesi reel kayıp demek.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
@@ -200,9 +485,8 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
   `test_api_portfolio.py` üzerinden dolaylı görüldü).
 - `config/sentiment.yaml`, `config/news_feeds.yaml`, `config/symbols.yaml`
   içerikleri okunmadı (düşük risk, F0/F1 kapsamında zaten stabil).
-- Intraday veri sağlayıcısının (yfinance ya da başka) gerçek geçmiş
-  intraday veri kapasitesi test edilmedi — Faz 9 öncesi ayrı bir doğrulama
-  gerekiyor (bu doğrulanmadan intraday mimariye başlanmamalı).
+- ~~Intraday veri sağlayıcısı test edilmedi~~ — **2026-09-27'de yapıldı**,
+  bkz. §8 ve §11 madde 10.
 - Gerçek DB'deki (Supabase, canlı) veri hacmi/kalitesi bu audit'te
   sorgulanmadı — bulgular kod okumasına dayanıyor, canlı veriye karşı
   ayrıca doğrulanmalı.

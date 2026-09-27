@@ -102,6 +102,51 @@ CREATE TABLE IF NOT EXISTS predictions (
 
 CREATE INDEX IF NOT EXISTS idx_predictions_symbol ON predictions(symbol_id, feature_date DESC);
 
+-- Faz 7: beklenen getiri BÜYÜKLÜĞÜ tahmini (magnitude_model). Var olan
+-- predictions satırlarına dokunmadan, idempotent olarak eklenir (init_schema
+-- her açılışta çalışır) — canlı DB'deki mevcut satırlar korunur.
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS expected_return REAL;
+
+-- Deney takibi: data/models/metrics.json her calismada UZERINE YAZILDIGI icin
+-- gecmis egitim deneyleri kayboluyordu (docs/BACKTEST_AUDIT.md §7). Her egitim
+-- calismasi buraya kalici bir satir birakir ve metrics.json SADECE ek bir
+-- cikti olarak yazilmaya devam eder.
+CREATE TABLE IF NOT EXISTS model_experiments (
+    id SERIAL PRIMARY KEY,
+    trained_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    model_version TEXT NOT NULL,
+    train_rows INTEGER NOT NULL,
+    test_rows INTEGER NOT NULL,
+    symbols INTEGER NOT NULL,
+    accuracy REAL,
+    roc_auc REAL,
+    mae REAL,
+    r2 REAL,
+    params JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_experiments_trained_at ON model_experiments(trained_at DESC);
+
+-- Faz 9-10 (intraday mimari): gunluk `prices_daily` tek tabloda gun bazli
+-- fiyat tutarken, intraday barlar interval'e gore (5m/15m/30m/1h) AYNI
+-- tabloda ayirt edilir — yfinance'in destekledigi gercek geriye gidislere
+-- bkz. pipeline/fetch_intraday_prices.py.
+CREATE TABLE IF NOT EXISTS prices_intraday (
+    id SERIAL PRIMARY KEY,
+    symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    interval TEXT NOT NULL,
+    ts TIMESTAMPTZ NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL NOT NULL,
+    volume REAL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(symbol_id, interval, ts)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prices_intraday_symbol ON prices_intraday(symbol_id, interval, ts DESC);
+
 CREATE TABLE IF NOT EXISTS portfolio (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_balance NUMERIC(14,2) NOT NULL,
@@ -433,19 +478,21 @@ def upsert_prediction(
     prob_up: float,
     predicted_up: int,
     model_version: str,
+    expected_return: float | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO predictions
-            (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, NOW())
+            (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version, expected_return, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
         ON CONFLICT(symbol_id, feature_date, model_version) DO UPDATE SET
             target_date = excluded.target_date,
             prob_up = excluded.prob_up,
             predicted_up = excluded.predicted_up,
+            expected_return = excluded.expected_return,
             created_at = NOW()
         """,
-        (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version),
+        (symbol_id, feature_date, target_date, prob_up, predicted_up, model_version, expected_return),
     )
 
 
@@ -508,3 +555,63 @@ def insert_backtest_equity(conn: ConnWrapper, run_id: int, equity_curve: list[tu
         "ON CONFLICT (run_id, snapshot_date) DO UPDATE SET total_value = excluded.total_value",
         ((run_id, d, v) for d, v in equity_curve),
     )
+
+
+def insert_model_experiment(
+    conn: ConnWrapper,
+    model_version: str,
+    train_rows: int,
+    test_rows: int,
+    symbols: int,
+    accuracy: float | None,
+    roc_auc: float | None,
+    mae: float | None,
+    r2: float | None,
+    params: dict,
+) -> None:
+    import json as _json
+
+    conn.execute(
+        """
+        INSERT INTO model_experiments
+            (model_version, train_rows, test_rows, symbols, accuracy, roc_auc, mae, r2, params)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (model_version, train_rows, test_rows, symbols, accuracy, roc_auc, mae, r2, _json.dumps(params)),
+    )
+
+
+def list_model_experiments(conn: ConnWrapper, limit: int = 20) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM model_experiments ORDER BY trained_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_intraday_prices(
+    conn: ConnWrapper,
+    symbol_id: int,
+    interval: str,
+    rows: Iterator[tuple],
+) -> int:
+    """rows: (ts_iso, open, high, low, close, volume)"""
+    cur = conn.executemany(
+        """
+        INSERT INTO prices_intraday (symbol_id, interval, ts, open, high, low, close, volume, fetched_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ON CONFLICT(symbol_id, interval, ts) DO UPDATE SET
+            open = excluded.open,
+            high = excluded.high,
+            low = excluded.low,
+            close = excluded.close,
+            volume = excluded.volume,
+            fetched_at = NOW()
+        """,
+        ((symbol_id, interval, *r) for r in rows),
+    )
+    return cur.rowcount
+
+
+def count_intraday_prices(conn: ConnWrapper) -> int:
+    return int(conn.execute("SELECT COUNT(*) AS n FROM prices_intraday").fetchone()["n"])
