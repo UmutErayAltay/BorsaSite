@@ -195,16 +195,19 @@ motoru birebir yansıtıyor. Boşluk kalmadı. 146 test yeşil.
 
 ## 9. Test kapsamı
 
-693 satır test, 8 dosya. Kapsanan: `trading/engine.py` (6 test),
-`trading/portfolio.py` (9 test), `trading/costs.py` (4 test),
-`pipeline/entity_linker.py` (kapsamlı, 179 satır), DB migration, API portfolio
-endpoint'i, trading config yükleme.
+**2026-09-27 güncel:** 150 test, ~22 dosya (audit yazıldığındaki "693 satır,
+8 dosya" çok eski — Faz 6/7 çalışması boyunca büyüdü). `trading/`,
+`backtest/`, `pipeline/entity_linker.py`, DB migration, API portfolio
+endpoint'i, trading config yükleme, artık `pipeline/{dataset,train_model,
+predict_model}.py` da kapsanıyor (aşağı bkz.).
 
-**Kapsanmayan (sıfır test):** `pipeline/dataset.py`, `pipeline/features.py`,
-`pipeline/train_model.py`, `pipeline/predict_model.py` — yani tam olarak
-feature/target/leakage riskinin yaşadığı kod hiç test edilmiyor. §2'deki
-etiket hatası bir birim testiyle (ör. "serinin son elemanı için target NaN/
-hariç tutulmalı") yakalanabilirdi.
+**2026-09-27 kapandı:** dört dosyanın da artık testi var — `test_dataset.py`
+(`target_up`/`target_return` son-satır NaN regresyonu + `build_dataset`
+filtre uyumu, `add_technical_features`'ı da dolaylı kapsıyor),
+`test_train_model.py`, `test_predict_model.py` (bu turda eklendi, bkz.
+§6/§7). 150 test, 12+ dosya. Kapsanmayan tek şey feature/target/leakage
+kodunun TAMAMI değil — yeni eklenen feature grubu denemesi (§7, hâlâ açık)
+gündeme gelirse o da kendi testini isteyecek.
 
 ## 10. Scheduler / retraining
 
@@ -242,8 +245,20 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
    (2026-09-27, bkz. §7); yeni feature grubu denemesi (momentum/volatilite/
    market context) hâlâ açık — gerçek geçmiş veriyle ölçülmesi gereken bir
    deney döngüsü, tek bir kod değişikliği değil.
-9. Faz 8: dashboard/raporlama.
-10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması şart).
+9. Faz 8: dashboard/raporlama. ✓ (2026-09-27 doğrulandı — bu madde de
+   audit'te işaretsizdi ama kod zaten vardı: `api/main.py` + `web/
+   index.html`, geniş bir `/api/*` yüzeyi (stats/symbols/predictions/
+   portfolio/trades/prices/news/chart), `backtest/reports.py` JSON/CSV/
+   HTML rapor üretiyor, `test_api_portfolio.py` ile test edilmiş.)
+10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması
+    şart). **Kısmen var, kısmen açık (2026-09-27 doğrulandı):**
+    `pipeline/intraday_watch.py` gün içi çalışıyor ama GÜNLÜK bar
+    kullanıyor (haber/KAP tetikli erken çıkış, kendi docstring'i bunu
+    bilinçli sınır olarak yazıyor) — audit'in istediği gerçek intraday
+    (5m/15m/1h) FİYAT mimarisi + onun backtest'i DEĞİL. Veri sağlayıcı
+    doğrulaması da hâlâ yapılmadı (§8'de not edildi). Bu madde GERÇEKTEN
+    açık, tek bir kod değişikliği değil — önce bir veri sağlayıcı
+    araştırması gerekir.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
