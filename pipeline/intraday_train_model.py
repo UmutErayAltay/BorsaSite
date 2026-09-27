@@ -25,6 +25,7 @@ import json
 import logging
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -95,6 +96,63 @@ def _information_coefficient(pred: np.ndarray, actual: np.ndarray) -> float | No
     return None if np.isnan(ic) else ic
 
 
+def _xgb_params(cfg: dict) -> tuple[dict, dict]:
+    """`(classifier_params, regressor_params)`: config'in `training` bloğundan
+    türetilir, eksikler varsayılanla doldurulur. Eğitim (`fit_intraday_models`)
+    ve deney kaydı (`run`) AYNI parametreleri görmeli — iki yerde ayrı
+    ayrı türetmek, kaydedilen deney ile gerçekten eğitilen modelin
+    sessizce ayrışmasına yol açardı."""
+    train_cfg = cfg["training"]
+    xgb_params = dict(train_cfg.get("xgb", {}))
+    xgb_params.setdefault("objective", "binary:logistic")
+    xgb_params.setdefault("random_state", int(train_cfg.get("random_state", 42)))
+
+    reg_params = dict(train_cfg.get("xgb_regressor", {}))
+    reg_params.setdefault("random_state", int(train_cfg.get("random_state", 42)))
+    return xgb_params, reg_params
+
+
+def fit_intraday_models(
+    train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict
+) -> tuple[Any, Any]:
+    """v2'nin İKİ modelini kurar ve eğitir: `(classifier, regressor)`.
+
+    Sınıflandırıcı yönü, regresör gün sonuna kadar beklenen getiri
+    BÜYÜKLÜĞÜNü tahmin eder (strateji kararı `pred_rod > entry_threshold`
+    olduğu için asıl karar modeli regresördür). İkisi de `eval_set=val`
+    ile erken durdurma için validation'a bakar — ama eğitim SADECE train'de
+    yapılır.
+
+    Ayrı `fit_intraday_models`, günlük `backtest/intraday_walk_forward.py`
+    gibi walk-forward çalıştıranların, eğitim kodu kopyalamadan aynı
+    modelleri fold başına kurabilmesi için dışa açıktır."""
+    X_train = train_df[INTRADAY_FEATURE_COLUMNS]
+    y_train = train_df["target_up"].astype(int)
+    y_train_ret = train_df["target_return"]  # kesintisiz, .astype(int) YOK
+    X_val = val_df[INTRADAY_FEATURE_COLUMNS]
+    y_val = val_df["target_up"].astype(int)
+    y_val_ret = val_df["target_return"]
+
+    xgb_params, reg_params = _xgb_params(cfg)
+
+    model = xgb.XGBClassifier(**xgb_params)
+    model.fit(
+        X_train,
+        y_train,
+        eval_set=[(X_val, y_val)],
+        verbose=False,
+    )
+
+    reg_model = xgb.XGBRegressor(**reg_params)
+    reg_model.fit(
+        X_train,
+        y_train_ret,
+        eval_set=[(X_val, y_val_ret)],
+        verbose=False,
+    )
+    return model, reg_model
+
+
 def run(save_metrics: bool = True) -> dict:
     cfg = load_intraday_model_config()
     model_cfg = cfg["model"]
@@ -123,29 +181,10 @@ def run(save_metrics: bool = True) -> dict:
     y_test = test_df["target_up"].astype(int)
     y_test_ret = test_df["target_return"]
 
-    xgb_params = dict(train_cfg.get("xgb", {}))
-    xgb_params.setdefault("objective", "binary:logistic")
-    xgb_params.setdefault("random_state", int(train_cfg.get("random_state", 42)))
-
-    model = xgb.XGBClassifier(**xgb_params)
-    model.fit(
-        X_train,
-        y_train,
-        eval_set=[(X_val, y_val)],
-        verbose=False,
-    )
+    xgb_params, reg_params = _xgb_params(cfg)
 
     # Aynı ayrım, hedef `target_return` (gün sonuna kadar getiri büyüklüğü).
-    reg_params = dict(train_cfg.get("xgb_regressor", {}))
-    reg_params.setdefault("random_state", int(train_cfg.get("random_state", 42)))
-
-    reg_model = xgb.XGBRegressor(**reg_params)
-    reg_model.fit(
-        X_train,
-        y_train_ret,
-        eval_set=[(X_val, y_val_ret)],
-        verbose=False,
-    )
+    model, reg_model = fit_intraday_models(train_df, val_df, cfg)
 
     # Giriş eşiği: regresorun VALIDATION tahminlerinin kantili. TEST'E
     # BAKILMAZ — eşik seçimi ve backtest, aynı gün görülmemiş veriyle

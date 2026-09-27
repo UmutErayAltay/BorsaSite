@@ -90,46 +90,44 @@ def load_intraday_model(
     return bundle["model"], bundle["magnitude_model"], bundle["features"], bundle
 
 
-def run_intraday_backtest(
-    trading_cfg: TradingConfig | None = None,
-    cost_cfg: BacktestCostConfig | None = None,
-    model_path: Path | None = None,
-    start_date: str | None = None,
+def _localized_day_bound(bound: str) -> pd.Timestamp:
+    """`"2026-05-11"` gibi gün bazlı ISO GÜN eşiğini `ts`'in TIMESTAMPTZ
+    dünyasına bağlar. `ts` tz-aware olduğu için naive eşikle karşılaştırmak
+    TypeError verir; bağlama yereli İstanbul'dur çünkü gün sınırını o
+    yerel tanımlar."""
+    ts = pd.Timestamp(bound)
+    return ts if ts.tz is not None else ts.tz_localize("Europe/Istanbul")
+
+
+def simulate_intraday(
+    df: pd.DataFrame,
+    trading_cfg: TradingConfig,
+    cost_cfg: BacktestCostConfig,
 ) -> BacktestResult:
-    """`bist_only` parametresi KALDIRILDI (2026-09-27): `build_intraday_dataset`
-    artık zaten sadece BIST döndürüyor (canlı `trading/engine.py`'nin alım
-    sorgusuyla aynı evren — US sembolleri hiç ticaret edilmiyor), ayrıca
-    filtrelemeye gerek yok.
+    """KARAR SATIRLARINI oynatır ve portföyü kurar.
 
-    `start_date` verilmezse bundle'daki `test_start` kullanılır: backtest
-    varsayılan olarak SADECE HİÇ GÖRÜLMEMİŞ test dönemini oynatır."""
-    trading_cfg = trading_cfg or load_trading_config()
-    cost_cfg = cost_cfg or BacktestCostConfig()
-    model, magnitude_model, features, bundle = load_intraday_model(model_path)
-    entry_threshold = float(bundle["entry_threshold"])
+    `df` = `build_intraday_dataset` satırları + model çıktıları. Üç kolon
+    ZORUNLUDUR ve SADECE bu fonksiyonun girdisidir:
 
-    # Feature'lar TÜM geçmiş üzerinden hesaplanır (rolling/ısınma pencereleri
-    # eksik olsaydı ilk günlerin feature'ları NaN olurdu) — filtreleme yalnızca
-    # KARAR satırlarına uygulanır.
-    df = build_intraday_dataset(require_target=False)
+    * `pred_rod` — regresörün beklenen gün sonu getirisi,
+    * `prob_up` — sınıflandırıcının karar logu (yalnızca raporlama),
+    * `entry_threshold` — SATIR BAZLI giriş eşiği.
+
+    Sonuncusu neden kolondur: `run_intraday_backtest` tek bir EŞİK ile çalışır
+    ama `backtest/intraday_walk_forward.py` her fold için kendi eşiğini
+    ÜRETİR (val tahminlerinin kantili). Eşiği satırdan okumak, fold
+    sınırlarını oynatma kodundan ayırır.
+
+    TÜM strateji kuralı (günde tek giriş, t+1 açılış dolumu, gün sonu zorla
+    kapanış) burada yaşar ve `run_intraday_backtest` ile paylaşılır — iki
+    giriş noktası aynı kodu çalıştırır, sapma olamaz.
+
+    Girdi boşsa boş `BacktestResult` döner (çağıran taraf `None` pencereleri
+    tolere edebilsin diye exception DEĞİL)."""
     if df.empty:
         return BacktestResult([], [], [], None, None)
+
     df = df.copy()
-
-    start = start_date or bundle.get("test_start")
-    if start:
-        # `test_start` gün bazlı bir ISO GÜN ("2026-05-11") — tz-naive. `ts`
-        # ise tz-aware; naive ile aware karşılaştırmak TypeError verir, o yüzden
-        # eşik, gün sınırını tanımlayan İstanbul yereline bağlanır.
-        start_ts = pd.Timestamp(start)
-        if start_ts.tz is None:
-            start_ts = start_ts.tz_localize("Europe/Istanbul")
-        df = df[df["ts"] >= start_ts].copy()
-    if df.empty:
-        return BacktestResult([], [], [], None, None)
-
-    df["pred_rod"] = magnitude_model.predict(df[features])
-    df["prob_up"] = model.predict_proba(df[features])[:, 1]  # yalnızca karar logu
     # Gün tespiti: `ts` TIMESTAMPTZ olduğu için önce naive'e çevrilip
     # normalize edilir — `pipeline/intraday_features.py`'deki AYNI dönüşüm
     # (aksi halde `normalize()` UTC gün sınırında keser ve barlar yanlış güne yazılır).
@@ -190,9 +188,11 @@ def run_intraday_backtest(
                 else:
                     decisions.append(dict(date=ts.isoformat(), symbol=symbol, action="tut", reason="eşiklerin içinde", prob_up=prob_up))
 
-            # 2) Giriş adayları — yalnızca dolumu mümkün olan barlar.
+            # 2) Giriş adayları — yalnızca dolumu mümkün olan barlar. Eşik
+            #    SATIR BAZLIdır (`entry_threshold` kolonu): tek eşikli
+            #    backtest'te sabit, walk-forward'da fold'a göre değişir.
             candidates = bar_rows[
-                (bar_rows["pred_rod"] > entry_threshold)
+                (bar_rows["pred_rod"] > bar_rows["entry_threshold"])
                 & bar_rows["next_open"].notna()
             ].sort_values("pred_rod", ascending=False)
             for _, row in candidates.iterrows():
@@ -225,3 +225,51 @@ def run_intraday_backtest(
         portfolio.record_snapshot(day.isoformat(), last_price_of_day)
 
     return BacktestResult(portfolio.equity_curve, portfolio.closed_trades, decisions, result_start, result_end)
+
+
+def run_intraday_backtest(
+    trading_cfg: TradingConfig | None = None,
+    cost_cfg: BacktestCostConfig | None = None,
+    model_path: Path | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> BacktestResult:
+    """`bist_only` parametresi KALDIRILDI (2026-09-27): `build_intraday_dataset`
+    artık zaten sadece BIST döndürüyor (canlı `trading/engine.py`'nin alım
+    sorgusuyla aynı evren — US sembolleri hiç ticaret edilmiyor), ayrıca
+    filtrelemeye gerek yok.
+
+    `start_date` verilmezse bundle'daki `test_start` kullanılır: backtest
+    varsayılan olarak SADECE HİÇ GÖRÜLMEMİŞ test dönemini oynatır.
+
+    `end_date` DAHİL DEĞİL: verilen günün barları oynatılmaz (o günün 00:00
+    damgası `ts < end_ts` filtresinin dışında kalır). `start_date` ile aynı
+    Europe/Istanbul gün sınırı mantığı kullanılır."""
+    trading_cfg = trading_cfg or load_trading_config()
+    cost_cfg = cost_cfg or BacktestCostConfig()
+    model, magnitude_model, features, bundle = load_intraday_model(model_path)
+    entry_threshold = float(bundle["entry_threshold"])
+
+    # Feature'lar TÜM geçmiş üzerinden hesaplanır (rolling/ısınma pencereleri
+    # eksik olsaydı ilk günlerin feature'ları NaN olurdu) — filtreleme yalnızca
+    # KARAR satırlarına uygulanır.
+    df = build_intraday_dataset(require_target=False)
+    if df.empty:
+        return BacktestResult([], [], [], None, None)
+    df = df.copy()
+
+    start = start_date or bundle.get("test_start")
+    if start:
+        df = df[df["ts"] >= _localized_day_bound(start)].copy()
+    if end_date:
+        df = df[df["ts"] < _localized_day_bound(end_date)].copy()
+    if df.empty:
+        return BacktestResult([], [], [], None, None)
+
+    df["pred_rod"] = magnitude_model.predict(df[features])
+    df["prob_up"] = model.predict_proba(df[features])[:, 1]  # yalnızca karar logu
+    # Tek eşik, motorun SATIR BAZLI girdi sözleşmesine yazılır; oynatma
+    # mantığı `simulate_intraday`'da yaşar.
+    df["entry_threshold"] = entry_threshold
+
+    return simulate_intraday(df, trading_cfg, cost_cfg)
