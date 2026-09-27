@@ -156,7 +156,16 @@ davranışı yansıtmaz — ayrı bir tur gerektirir.
 - Feature importance / SHAP raporu hiç üretilmiyor.
 - Yeni feature grubu (momentum, volatilite, trend, market context) hiç
   denenmemiş — 12 feature README'nin ilk günden beri aynı.
-- Calibration hiç ölçülmemiş — `prob_up=0.70` gerçekten ~%70 mü, bilinmiyor.
+- ~~Calibration hiç ölçülmemiş~~ — **bu bulgu YANLIŞ/eski çıktı (2026-09-27
+  doğrulandı):** `backtest/calibration.py::ProbabilityCalibrator` zaten var
+  (isotonic/sigmoid, sadece validation'da fit, OOS'ta Brier before/after
+  ölçülüyor — bkz. `backtest/walk_forward.py`, `test_calibration.py`,
+  `test_walk_forward.py`). Muhtemelen bu madde Faz 5 tamamlanmadan
+  yazılmış ve audit güncellenmemiş. Açık soru KALDI ama farklı: bu ölçüm
+  SADECE `run_walk_forward`/`run_backtest` script'i elle/manuel çalıştırınca
+  üretiliyor — GH Actions'daki günlük scheduler'da (Faz 10, `.github/
+  workflows/`) rutin bir parçası DEĞİL, yani canlı modelin güncel
+  kalibrasyonu sürekli izlenmiyor, sadece ad-hoc sorgulanabiliyor.
 
 ## 8. Veri eksikleri / veri kalitesi
 
@@ -211,11 +220,17 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
 4. Faz 3: işlem maliyeti + slippage + spread modeli (aynı-bar execution
    hatasını da burada düzelt).
 5. Faz 4: walk-forward validation.
-6. Faz 5: threshold + calibration (yalnızca train/validation ile).
+6. Faz 5: threshold + calibration (yalnızca train/validation ile). ✓
+   (kod zaten var — `backtest/calibration.py`/`thresholds.py`, audit'in §7
+   "calibration hiç ölçülmemiş" bulgusu yanlış çıktı, 2026-09-27'de
+   düzeltildi — bkz. §7. Rutin/scheduled DEĞİL, hâlâ sadece ad-hoc.)
 7. Faz 6: risk yönetimi (stop-loss/take-profit opsiyonel, ölçülerek). ✓ (2026-09-26/27, bkz. §6 güncellemesi — ikisi de kapandı: max single-position loss = stop-loss, min-expected-edge Faz 7'nin bir parçası olarak çözüldü)
 8. Faz 7: feature deneyleri + model iyileştirme. Beklenen getiri büyüklüğü
-   tahmini (magnitude_model) kısmı ✓ (2026-09-27, bkz. §6); feature
-   deneyleri/deney takibi/calibration ölçümü hâlâ açık.
+   tahmini (magnitude_model) kısmı ✓ (2026-09-27, bkz. §6); calibration
+   zaten vardı (yukarı bkz.); deney takibi + feature importance ✓
+   (2026-09-27, bkz. §7); yeni feature grubu denemesi (momentum/volatilite/
+   market context) hâlâ açık — gerçek geçmiş veriyle ölçülmesi gereken bir
+   deney döngüsü, tek bir kod değişikliği değil.
 9. Faz 8: dashboard/raporlama.
 10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması şart).
 
