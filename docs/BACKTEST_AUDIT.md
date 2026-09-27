@@ -188,10 +188,42 @@ motoru birebir yansıtıyor. Boşluk kalmadı. 146 test yeşil.
   bağlanmamış haber kontrolü de yok (entity_linker'daki 4 düzeltme
   YANLIŞ eşleştirmeyi çözdü, ama "veri bozuk mu" kontrolü ayrı bir konu,
   hâlâ yok).
-- Intraday veri sağlayıcısı hiç değerlendirilmemiş — mevcut `yfinance`
-  tabanlı `fetch_prices.py`'nin gerçek intraday (5m/15m/1h) geçmiş veri
-  sağlayıp sağlamadığı bu audit kapsamında doğrulanmadı, Faz 9 öncesi
-  ayrıca kontrol edilmeli.
+- **2026-09-27 doğrulandı (gerçek ağ isteğiyle, `config/symbols.yaml`'daki
+  gerçek BIST/US sembolleriyle):** `yfinance` (kurulu sürüm 1.7.0 —
+  `requirements.txt`'teki `>=0.2.40` pin'i çok geride, ayrı bir bulgu,
+  aşağıda) BIST için gerçek intraday geçmiş veri VERIYOR:
+  - `Ticker(...).history(period=..., interval=...)` (mevcut
+    `fetch_prices.py`'nin zaten kullandığı desen, `download()` DEĞİL —
+    `download()` MultiIndex kolon döndürüyor, `.history()` tek seviyeli
+    kalıyor, kod değişmeden uyumlu).
+  - Gerçek pencereler (THYAO.IS ile ölçüldü): `1m` ~7-8 gün, `5m`/`15m`/
+    `30m` 60 gün, `1h` **730 gün** (`period="max"` bunu YANSITMIYOR, sadece
+    ~1 yıl döndürüyor — `period="730d"` açıkça istenmeli).
+  - Veri kalitesi: OHLCV'de NaN yok, günler arası/hafta sonu boşlukları
+    beklenen (16 saat / 2 gün 16 saat) dışında anormal boşluk yok.
+  - **Gerçek tuzak:** her BIST sembolünde (test edilen 5 sembol, likit ve
+    az likit fark etmeden) günde TAM 1 bar `Volume=0` geliyor — günün SON
+    bar'ı (kapanış müzayedesi anlık görüntüsü, Yahoo'nun BIST'e özgü bir
+    tuhaflığı). AAPL'de (ABD) bu YOK. Bu, gerçek illikiditeyle
+    karıştırılıp özelliklere/target'a sızabilir — implementasyon bu son
+    bar'ı ATMALI (aynı `pipeline/features.py`'deki "son satır" dikkatinin
+    intraday karşılığı).
+  - 5 sembole art arda gerçek istek atıldı, rate-limit/429 görülmedi —
+    ama üretimde ~35 BIST + birkaç US sembolü × birden fazla interval
+    düzenli çekilecekse throttling/backoff YİNE de eklenmeli, test
+    edilmedi.
+  - **Sonuç: Faz 9-10'un önündeki veri-sağlayıcı engeli KALKTI** — veri
+    gerçekten var ve kalitesi kabul edilebilir. Kalan iş artık araştırma
+    değil, mühendislik: `pipeline/fetch_prices.py`'nin intraday bar
+    çekme + DB şeması (`prices_daily` değil ayrı bir `prices_intraday`
+    tablosu gerekir, günlük tabloyla karıştırılmamalı) + bu bar'ları
+    kullanan bir feature/model/backtest katmanı — bu hâlâ ayrı,
+    büyük bir tur, ama "önce doğrulama" artık yapıldı.
+  - **İlgisiz ama gerçek bir bulgu:** `requirements.txt::yfinance>=0.2.40`
+    pin'i kurulu `1.7.0`'dan çok geride — büyük bir major sürüm farkı.
+    Şu an `fetch_prices.py` (tek-sembol `.history()`) bu sürümle hâlâ
+    çalışıyor (doğrulandı) ama pin güncellenmeli, aksi halde farklı bir
+    ortamda hangi sürümün kurulacağı belirsiz.
 
 ## 9. Test kapsamı
 
@@ -250,15 +282,16 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
    index.html`, geniş bir `/api/*` yüzeyi (stats/symbols/predictions/
    portfolio/trades/prices/news/chart), `backtest/reports.py` JSON/CSV/
    HTML rapor üretiyor, `test_api_portfolio.py` ile test edilmiş.)
-10. Faz 9-10: intraday mimari + backtest (önce veri sağlayıcı doğrulaması
-    şart). **Kısmen var, kısmen açık (2026-09-27 doğrulandı):**
+10. Faz 9-10: intraday mimari + backtest. **Kısmen var, kısmen açık:**
     `pipeline/intraday_watch.py` gün içi çalışıyor ama GÜNLÜK bar
     kullanıyor (haber/KAP tetikli erken çıkış, kendi docstring'i bunu
     bilinçli sınır olarak yazıyor) — audit'in istediği gerçek intraday
-    (5m/15m/1h) FİYAT mimarisi + onun backtest'i DEĞİL. Veri sağlayıcı
-    doğrulaması da hâlâ yapılmadı (§8'de not edildi). Bu madde GERÇEKTEN
-    açık, tek bir kod değişikliği değil — önce bir veri sağlayıcı
-    araştırması gerekir.
+    (5m/15m/1h) FİYAT mimarisi + onun backtest'i DEĞİL. **Veri sağlayıcı
+    doğrulaması 2026-09-27'de gerçek ağ isteğiyle yapıldı ve GEÇTİ**
+    (bkz. §8) — `yfinance` BIST için gerçek, kaliteli intraday veri
+    veriyor (1h için 730 gün geriye). Önündeki engel kalktı; kalan iş artık
+    mühendislik (DB şeması, fetch/feature/backtest katmanı) — hâlâ ayrı,
+    büyük bir tur ama artık bir araştırma sorusu değil.
 
 ## 12. Bu audit'in kapsamadığı / doğrulanmadığı noktalar
 
@@ -266,9 +299,8 @@ görünen ama aslında bozuk bir walk-forward sonucu üretebilir.
   `test_api_portfolio.py` üzerinden dolaylı görüldü).
 - `config/sentiment.yaml`, `config/news_feeds.yaml`, `config/symbols.yaml`
   içerikleri okunmadı (düşük risk, F0/F1 kapsamında zaten stabil).
-- Intraday veri sağlayıcısının (yfinance ya da başka) gerçek geçmiş
-  intraday veri kapasitesi test edilmedi — Faz 9 öncesi ayrı bir doğrulama
-  gerekiyor (bu doğrulanmadan intraday mimariye başlanmamalı).
+- ~~Intraday veri sağlayıcısı test edilmedi~~ — **2026-09-27'de yapıldı**,
+  bkz. §8 ve §11 madde 10.
 - Gerçek DB'deki (Supabase, canlı) veri hacmi/kalitesi bu audit'te
   sorgulanmadı — bulgular kod okumasına dayanıyor, canlı veriye karşı
   ayrıca doğrulanmalı.
