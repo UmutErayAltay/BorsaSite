@@ -16,3 +16,4 @@ min_position_value_try: 500.0
 stop_loss_pct: 0.07
 take_profit_pct: 0.15
 cooldown_days_after_exit: 3
+min_expected_edge_pct: 0.0

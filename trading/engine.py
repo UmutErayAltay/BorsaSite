@@ -137,7 +137,7 @@ def run_once(conn, cfg: TradingConfig, decision_date: date | None = None) -> dic
     open_symbol_ids = {p.symbol_id for p in pf.get_state(conn).open_positions}
     candidates = conn.execute(
         """
-        SELECT p.symbol_id, p.prob_up
+        SELECT p.symbol_id, p.prob_up, COALESCE(p.expected_return, 0.0) AS expected_return
         FROM predictions p
         JOIN symbols s ON s.id = p.symbol_id
         WHERE s.market = 'BIST'
@@ -178,7 +178,10 @@ def run_once(conn, cfg: TradingConfig, decision_date: date | None = None) -> dic
             _log_decision(conn, decision_date, symbol_id, "red", "güncel fiyat yok", prob_up)
             continue
 
-        ok, reason = pf.buy(conn, symbol_id, price, prob_up, decision_date, cfg)
+        ok, reason = pf.buy(
+            conn, symbol_id, price, prob_up, decision_date, cfg,
+            expected_return=float(row["expected_return"]),
+        )
         if ok:
             stats["bought"] += 1
             open_symbol_ids.add(symbol_id)

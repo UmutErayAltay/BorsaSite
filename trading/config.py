@@ -29,6 +29,7 @@ class TradingConfig:
     stop_loss_pct: float = 0.0
     take_profit_pct: float = 0.0
     cooldown_days_after_exit: int = 0
+    min_expected_edge_pct: float = 0.0
 
 
 def load_trading_config(path: Path | None = None) -> TradingConfig:

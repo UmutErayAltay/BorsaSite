@@ -248,3 +248,63 @@ def test_run_once_rebuys_immediately_when_cooldown_disabled(conn):
 
     assert stats["bought"] == 1
     assert get_open_position(conn, symbol_id) is not None
+
+
+# --- Faz 7: beklenen edge filtresi ------------------------------------------
+
+
+def test_run_once_rejects_candidate_with_null_expected_return_when_edge_enabled(conn):
+    """Beklenen getiri bilinmeyen (NULL) bir tahmin, edge kontrolü AÇIKKEN
+    reddedilmelidir: motor NULL'ı 0.0'a düşürür, 0 kâr round-trip ücreti +
+    güvenlik payını aşamaz. `trade_decisions`'a edge sebebiyle yazılır."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    assert edge_cfg.min_expected_edge_pct > 0
+    ensure_portfolio(conn, edge_cfg.starting_balance)
+    symbol_id = _setup_symbol_with_price(conn, "THYAO.IS", 100.0)
+    upsert_prediction(conn, symbol_id, "2026-09-10", "2026-09-11", 0.75, 1, "1.0")
+    assert conn.execute(
+        "SELECT expected_return FROM predictions WHERE symbol_id = ?", (symbol_id,)
+    ).fetchone()["expected_return"] is None
+
+    stats = run_once(conn, edge_cfg, decision_date=date(2026, 9, 10))
+
+    assert stats["bought"] == 0
+    assert stats["rejected"] == 1
+    assert get_open_position(conn, symbol_id) is None
+    row = conn.execute(
+        "SELECT action, reason FROM trade_decisions WHERE symbol_id = ? AND decision_date = ?",
+        (symbol_id, "2026-09-10"),
+    ).fetchone()
+    assert row["action"] == "red"
+    assert "beklenen kâr" in row["reason"]
+    assert "round-trip ücret" in row["reason"]
+
+
+def test_run_once_buys_candidate_with_sufficient_expected_return(conn):
+    """Aynı edge cfg'si altında beklenen getiri yeterliyse alım yapılır."""
+    edge_cfg = replace(CFG, min_expected_edge_pct=0.01)
+    ensure_portfolio(conn, edge_cfg.starting_balance)
+    symbol_id = _setup_symbol_with_price(conn, "THYAO.IS", 100.0)
+    upsert_prediction(
+        conn, symbol_id, "2026-09-10", "2026-09-11", 0.75, 1, "1.0",
+        expected_return=0.02,
+    )
+
+    stats = run_once(conn, edge_cfg, decision_date=date(2026, 9, 10))
+
+    assert stats["bought"] == 1
+    assert get_open_position(conn, symbol_id) is not None
+
+
+def test_run_once_ignores_expected_return_when_edge_disabled(conn):
+    """min_expected_edge_pct=0.0 (varsayılan): beklenen getiri NULL olsa bile
+    davranış eskisi gibi — alım yapılır (geriye uyumluluk)."""
+    assert CFG.min_expected_edge_pct == 0.0
+    ensure_portfolio(conn, CFG.starting_balance)
+    symbol_id = _setup_symbol_with_price(conn, "THYAO.IS", 100.0)
+    upsert_prediction(conn, symbol_id, "2026-09-10", "2026-09-11", 0.75, 1, "1.0")
+
+    stats = run_once(conn, CFG, decision_date=date(2026, 9, 10))
+
+    assert stats["bought"] == 1
+    assert get_open_position(conn, symbol_id) is not None
