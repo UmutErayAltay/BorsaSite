@@ -481,6 +481,14 @@ tr.selected td {
   margin-bottom: 1rem;
 }
 
+#benchmark-summary {
+  margin-top: -0.5rem;
+}
+
+#benchmark-summary b {
+  font-weight: 600;
+}
+
 .detail-news-wrap {
   border-top: 1px solid var(--border);
   padding-top: 1rem;

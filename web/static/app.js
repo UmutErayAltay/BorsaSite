@@ -395,54 +395,119 @@ async function checkLiveNow() {
 
 document.getElementById("btn-check-live").addEventListener("click", checkLiveNow);
 
+// Sözleşmedeki yüzdeler tr-TR biçiminde, işaretli gösterilir. İşareti elle
+// koyuyoruz: bazı ICU sürümlerinde tr-TR eksi işaretini sona atıyor.
+function formatSignedPct(value, suffix = "%") {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  const n = Number(value);
+  const abs = Math.abs(n).toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${n >= 0 ? "+" : "-"}${abs}${suffix}`;
+}
+
+function toneClass(value) {
+  if (value == null || Number.isNaN(Number(value))) return "";
+  return Number(value) >= 0 ? "sentiment-pos" : "sentiment-neg";
+}
+
+function renderBenchmarkSummary(data) {
+  const el = document.getElementById("benchmark-summary");
+  if (!el) return;
+
+  if (!data.benchmark_available) {
+    el.textContent = data.note || "BIST 100 karşılaştırması için veri yok.";
+    return;
+  }
+
+  // innerHTML'e yalnızca sayılar ve kaçışlanmış etiket giriyor.
+  const label = escapeHtml(data.benchmark_label || "BIST 100");
+  const cell = (value, suffix = "%") =>
+    `<b class="${toneClass(value)}">${formatSignedPct(value, suffix)}</b>`;
+
+  const diff = data.difference_pct_points;
+  const behind = diff != null && Number(diff) < 0 ? " — portföy endeksin gerisinde" : "";
+
+  el.innerHTML =
+    `Portföy: ${cell(data.portfolio_return_pct)} · ` +
+    `${label}: ${cell(data.benchmark_return_pct)} · ` +
+    `Fark: ${cell(diff, " puan")}${behind}`;
+}
+
 async function loadEquityChart() {
-  const data = await fetchJSON("/api/portfolio/history");
+  const data = await fetchJSON("/api/portfolio/benchmark");
   const ctx = document.getElementById("equity-chart");
   if (equityChart) equityChart.destroy();
+
+  renderBenchmarkSummary(data);
 
   if (!data.items.length) {
     equityChart = new Chart(ctx, { type: "line", data: { labels: [], datasets: [] } });
     return;
   }
 
-  const values = data.items.map((s) => s.total_value);
+  const values = data.items.map((s) => s.portfolio);
   const isUp = values[values.length - 1] >= values[0];
   const lineColor = isUp ? "#22c55e" : "#ef4444";
   const fillColor = isUp ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)";
+  const hasBenchmark = Boolean(data.benchmark_available);
+
+  const datasets = [
+    {
+      label: "Portföy",
+      data: values,
+      borderColor: lineColor,
+      backgroundColor: fillColor,
+      fill: true,
+      tension: 0.15,
+      pointRadius: data.items.length > 80 ? 0 : 2,
+      pointHoverRadius: 4,
+      borderWidth: 2.5,
+    },
+  ];
+
+  if (hasBenchmark) {
+    datasets.push({
+      label: `${data.benchmark_label || "BIST 100"} (aynı başlangıç)`,
+      data: data.items.map((s) => s.benchmark),
+      borderColor: "#8b9cb3",
+      borderDash: [6, 4],
+      fill: false,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      borderWidth: 2,
+      tension: 0.15,
+    });
+  }
 
   equityChart = new Chart(ctx, {
     type: "line",
     data: {
-      labels: data.items.map((s) => s.snapshot_date),
-      datasets: [
-        {
-          label: "Toplam varlık",
-          data: values,
-          borderColor: lineColor,
-          backgroundColor: fillColor,
-          fill: true,
-          tension: 0.15,
-          pointRadius: data.items.length > 80 ? 0 : 2,
-          pointHoverRadius: 4,
-          borderWidth: 2.5,
-        },
-      ],
+      labels: data.items.map((s) => s.date),
+      datasets,
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: hasBenchmark,
+          labels: { color: "#8b9cb3", boxWidth: 12, boxHeight: 8, padding: 12 },
+        },
         tooltip: {
           callbacks: {
-            label: (c) => `Toplam varlık: ${Number(c.raw).toFixed(2)} TL`,
+            label: (c) =>
+              c.raw == null
+                ? `${c.dataset.label}: —`
+                : `${c.dataset.label}: ${Number(c.raw).toFixed(2)} TL`,
           },
         },
       },
       scales: {
         x: {
-          ticks: { color: "#8b9cb3", maxTicksLimit: 10, maxRotation: 0 },
+          ticks: { color: "#8b9cb3", maxTicksLimit: window.innerWidth < 600 ? 4 : 10, maxRotation: 0, autoSkipPadding: 12 },
           grid: { color: "rgba(42,53,72,0.6)" },
         },
         y: {
