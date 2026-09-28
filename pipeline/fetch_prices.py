@@ -148,12 +148,29 @@ def run(
                     sector=sector,
                 )
                 upsert_prices(conn, symbol_id, iter(rows))
+                # Her sembolü kendi transaction'ında commit'liyoruz: aksi
+                # halde tüm döngü tek transaction'da kalır ve bir sembol
+                # başarısız olduğunda aşağıdaki rollback o ana kadar
+                # başarıyla işlenmiş TÜM önceki sembolleri de silerdi.
+                conn.commit()
                 stats["symbols"] += 1
                 stats["price_rows"] += len(rows)
                 logger.info("%s: %d bar kaydedildi", ticker, len(rows))
             except Exception as e:
                 logger.exception("Hata %s: %s", ticker, e)
                 stats["errors"] += 1
+                # Postgres, bu sembolün INSERT/UPDATE'inde hata verdiyse
+                # transaction'ı "aborted" durumuna düşürür ve rollback
+                # gelene kadar AYNI bağlantıdaki her komutu reddeder
+                # (InFailedSqlTransaction) — döngü devam ettiği için
+                # sonraki her sembol ve döngü sonundaki count_symbols/
+                # count_prices de bu yüzden patlıyordu (2026-09-28,
+                # canlı çalıştırmada gözlemlendi: "PG" sonrası tüm
+                # semboller ve sayaçlar aynı hatayla düştü). Rollback,
+                # bağlantıyı bir sonraki sembol için tekrar kullanılabilir
+                # hale getirir; yukarıdaki per-sembol commit sayesinde
+                # sadece BU sembolün değişiklikleri kaybolur.
+                conn.rollback()
 
         stats["total_symbols_db"] = count_symbols(conn)
         stats["total_prices_db"] = count_prices(conn)
