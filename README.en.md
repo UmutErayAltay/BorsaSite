@@ -1,6 +1,6 @@
 # Borsa AI — Data pipeline, prediction and paper trading for BIST + US stocks
 
-<!-- TODO: screenshot to be added -->
+![Borsa AI dashboard](docs/screenshots/dashboard.png)
 
 ## Description
 

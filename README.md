@@ -1,6 +1,6 @@
 # Borsa AI — BIST + ABD hisseleri için veri hattı, tahmin ve sanal alım-satım
 
-<!-- TODO: ekran görüntüsü eklenecek -->
+![Borsa AI dashboard](docs/screenshots/dashboard.png)
 
 ## Açıklama
 
